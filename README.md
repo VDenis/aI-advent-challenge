@@ -57,7 +57,7 @@ python bot.py
 ## Структура файлов
 
 ```
-gigachat_bot/
+app/
 ├── bot.py              # Основная логика Telegram-бота
 ├── gigachat_client.py          # Клиент GigaChat API
 └── .env               # Токены (не коммить!)
