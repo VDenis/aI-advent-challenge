@@ -19,7 +19,18 @@ async def get_giga_token():
             js = await resp.json()
             return js["access_token"]
 
-async def ask_gigachat(user_text: str) -> str:
+async def ask_gigachat(user_text: str, return_full: bool = False):
+    """
+    Отправляет запрос в GigaChat API.
+    
+    Args:
+        user_text: Текст запроса пользователя
+        return_full: Если True, возвращает полный JSON ответ,
+                     если False, возвращает только текст ответа
+    
+    Returns:
+        dict или str в зависимости от параметра return_full
+    """
     token = await get_giga_token()
     headers = {
         "Authorization": f"Bearer {token}",
@@ -30,7 +41,7 @@ async def ask_gigachat(user_text: str) -> str:
         "model": "GigaChat",
         "stream": False,
         "messages": [
-            {"role": "system", "content": "Ты дружелюбный Telegram-бот, отвечай кратко и по делу."},
+            {"role": "system", "content": "Ты дружелюбный Telegram-бот, отвечай кратко и по делу. Используй Markdown для форматирования текста (жирный **текст**, курсив *текст*, код `код`)."},
             {"role": "user", "content": user_text},
         ],
     }
@@ -38,4 +49,7 @@ async def ask_gigachat(user_text: str) -> str:
     async with aiohttp.ClientSession() as session:
         async with session.post(GIGA_CHAT_URL, headers=headers, json=payload) as resp:
             js = await resp.json()
-            return js["choices"][0]["message"]["content"]
+            if return_full:
+                return js
+            else:
+                return js["choices"][0]["message"]["content"]
