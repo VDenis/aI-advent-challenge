@@ -19,12 +19,13 @@ async def get_giga_token():
             js = await resp.json()
             return js["access_token"]
 
-async def ask_gigachat(user_text: str, return_full: bool = False):
+async def ask_gigachat(user_text: str, system_prompt: str = None, return_full: bool = False):
     """
     Отправляет запрос в GigaChat API.
     
     Args:
         user_text: Текст запроса пользователя
+        system_prompt: Системный промпт (если None, используется базовый)
         return_full: Если True, возвращает полный JSON ответ,
                      если False, возвращает только текст ответа
     
@@ -37,11 +38,15 @@ async def ask_gigachat(user_text: str, return_full: bool = False):
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
+    
+    if system_prompt is None:
+        system_prompt = "Ты дружелюбный Telegram-бот, отвечай кратко и по делу. Используй Markdown для форматирования текста (жирный **текст**, курсив *текст*, код `код`)."
+    
     payload = {
         "model": "GigaChat",
         "stream": False,
         "messages": [
-            {"role": "system", "content": "Ты дружелюбный Telegram-бот, отвечай кратко и по делу. Используй Markdown для форматирования текста (жирный **текст**, курсив *текст*, код `код`)."},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_text},
         ],
     }
