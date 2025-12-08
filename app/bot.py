@@ -1,210 +1,183 @@
 import asyncio
 import os
+from typing import Dict, List, Literal, TypedDict
+
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message
-from aiogram.filters import CommandStart, Command
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import Command, CommandStart
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 from dotenv import load_dotenv
 
-from gigachat_client import ask_gigachat
+from gigachat_client import chat_gigachat
+
+EXPERT_PROMPT = """Ты — эксперт по подбору квартир в новостройках и на вторичном рынке. Твоя задача — помогать пользователю найти оптимальную квартиру под его запрос: бюджет, количество комнат, район, транспортная доступность, инфраструктура, сроки сдачи и т.п. Всегда сначала уточняй критерии, если их не хватает для осознанной рекомендации. Объясняй свои рекомендации простым понятным языком, без канцелярита. Давай структурированные ответы: краткий вывод, затем список подходящих вариантов с короткими комментариями, плюсы и минусы для каждого."""
+
+FRIEND_PROMPT = """Ты — дружелюбный, но при этом разумный друг, который помогает выбрать квартиру. Общайся неформально, как хороший знакомый: можно использовать разговорные формулировки, но без грубостей и токсичности. Твоя задача — помочь человеку разобраться, подходит ли квартира под его образ жизни, привычки, бюджет и планы на будущее. Поддерживай, снимай лишнюю тревогу, но не скрывай очевидные минусы вариантов. Отвечая, сначала коротко отзеркали запрос («ты ищешь ...»), затем давай рекомендации и мягко подталкивай к уточняющим вопросам, если чего-то не хватает."""
+
+CRITIC_PROMPT = """Ты — строгий и требовательный критик при выборе квартиры. Твоя задача — искать слабые места в каждом варианте: завышенная цена, неудачная планировка, проблемы с локацией, риски по срокам сдачи, слабая инфраструктура, шум, транспорт и т.д. Будь прямолинейным, но не оскорбительным: критикуй варианты, а не пользователя. Каждый раз, когда пользователь предлагает вариант или критерий, сначала перечисляй возможные риски и недостатки, затем давай взвешенный вывод: «если для тебя Х не критично — вариант можно рассматривать / лучше поискать альтернативу». Не соглашайся автоматически, всегда проверяй, не есть ли за запросом скрытые проблемы (переплата, завышенные ожидания, недооценка района и т.п.)."""
+
+DEFAULT_PROMPT = """Ты — умный помощник для поиска и анализа информации о квартирах и недвижимости, но также можешь отвечать на общие вопросы. По умолчанию общайся нейтрально и вежливо, структурируй ответы и по возможности уточняй цель пользователя, если запрос выглядит неполным или расплывчатым. Если пользователь начинает обсуждать покупку или аренду квартиры, автоматически переходи к поведению эксперта по подбору квартир: уточняй критерии, помогай формулировать запрос и объясняй плюсы и минусы решений. Если пользователь просит дружеский совет или «покритикуй мой вариант», можешь адаптировать стиль под более дружелюбный или критичный, но сохраняй рациональность и пользу."""
 
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
 
-# Состояния для FSM
-class MovieQuiz(StatesGroup):
-    question_1 = State()  # Настроение и жанр
-    question_2 = State()  # Длительность
-    question_3 = State()  # Мозговая нагрузка
-    question_4 = State()  # Интересы
-    question_5 = State()  # Время выхода
+class ConversationState(TypedDict):
+    mode: Literal["expert", "friend", "critic", "default"]
+    history: List[Dict[str, str]]
 
 
-# Тексты вопросов
-QUESTIONS = {
-    1: "🎭 Какое у тебя настроение? Что хочется посмотреть?\n\n"
-       "Например: адреналин, комедию, драму, триллер, фантастику, хоррор, романтику...",
-    
-    2: "⏱ Сколько времени у тебя есть на просмотр?\n\n"
-       "• Короткий фильм (до 90 минут)\n"
-       "• Средний фильм (90-120 минут)\n"
-       "• Длинный фильм (120+ минут)",
-    
-    3: "🧠 Какую мозговую нагрузку предпочитаешь?\n\n"
-       "• Легкий фильм (расслабиться и не думать)\n"
-       "• Баланс (интересный, но не сложный)\n"
-       "• Умный фильм (требует внимания и размышлений)",
-    
-    4: "💫 Что тебе интересно в фильмах?\n\n"
-       "Например: космос, отношения, спецэффекты, экшн, философия, история, детективы, приключения...",
-    
-    5: "📅 Какой период кино предпочитаешь?\n\n"
-       "• Классика (до 1990-х)\n"
-       "• Золотое время (1990-2010)\n"
-       "• Новинки (2010+)"
+PROMPTS: Dict[str, str] = {
+    "expert": EXPERT_PROMPT,
+    "friend": FRIEND_PROMPT,
+    "critic": CRITIC_PROMPT,
+    "default": DEFAULT_PROMPT,
 }
+
+states: Dict[int, ConversationState] = {}
+KEYWORDS = ["квартира", "flat", "цена", "площадь", "район", "этаж"]
+
+
+async def get_state(user_id: int) -> ConversationState:
+    return states.get(user_id, {"mode": "default", "history": []})
+
+
+async def set_state(user_id: int, **kwargs) -> None:
+    current = await get_state(user_id)
+    states[user_id] = {**current, **kwargs}
+
+
+def build_mode_keyboard() -> InlineKeyboardMarkup:
+    buttons = [
+        [
+            InlineKeyboardButton(text="🏗 Эксперт", callback_data="mode:expert"),
+            InlineKeyboardButton(text="🤝 Друг", callback_data="mode:friend"),
+        ],
+        [
+            InlineKeyboardButton(text="🧭 Критик", callback_data="mode:critic"),
+            InlineKeyboardButton(text="⚖️ По умолчанию", callback_data="mode:default"),
+        ],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+async def apply_mode(message: Message, user_id: int, mode: str, source: str) -> None:
+    await set_state(user_id, mode=mode)
+    note = {
+        "expert": "Режим эксперта: уточняю критерии и подбираю варианты.",
+        "friend": "Режим друга: общаюсь неформально и поддерживаю.",
+        "critic": "Режим критика: ищу слабые места и риски.",
+        "default": "Нейтральный режим: отвечаю вежливо и структурно.",
+    }.get(mode, "Режим обновлён.")
+    await message.answer(f"Режим переключён на *{mode}* ({source}).\n{note}")
 
 
 @dp.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext):
-    """Приветствие и начало диалога"""
-    await state.clear()  # Очищаем предыдущее состояние
-    
-    greeting = (
-        "🎬 Привет! Я бот **\"Чтосмотреть\"**! 🍿\n\n"
-        "Помогу тебе выбрать идеальный фильм на вечер! "
-        "Отвечу на 5 вопросов о твоих предпочтениях, "
-        "и я порекомендую тебе отличные варианты.\n\n"
-        "Готов начать? Давай узнаем, что посмотреть! 🎥✨"
+async def cmd_start(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    await set_state(user_id, mode="default", history=[])
+    intro = (
+        "👋 Привет! Я помогаю подобрать и оценить варианты квартир. "
+        "Выбери стиль ответа или просто напиши запрос.\n\n"
+        "Команды: /mode_expert /mode_friend /mode_critic /mode_default /reset\n"
+        "Кнопки ниже переключают режим. История хранится пока бот запущен."
     )
-    
-    await message.answer(greeting, parse_mode=ParseMode.MARKDOWN)
-    await asyncio.sleep(1)  # Небольшая пауза для естественности
-    
-    # Задаём первый вопрос
-    await message.answer(QUESTIONS[1], parse_mode=ParseMode.MARKDOWN)
-    await state.set_state(MovieQuiz.question_1)
+    await message.answer(intro, reply_markup=build_mode_keyboard())
 
 
-@dp.message(Command("cancel"))
-async def cmd_cancel(message: Message, state: FSMContext):
-    """Отмена текущего опроса"""
-    current_state = await state.get_state()
-    if current_state is None:
-        await message.answer("Нечего отменять. Используй /start чтобы начать заново!")
-        return
-    
-    await state.clear()
-    await message.answer(
-        "❌ Опрос отменён. Когда захочешь подобрать фильм — пиши /start!",
-        parse_mode=ParseMode.MARKDOWN
-    )
+@dp.message(Command("reset"))
+async def cmd_reset(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    states[user_id] = {"mode": "default", "history": []}
+    await message.answer("История очищена, режим сброшен на *default*.")
 
 
-@dp.message(MovieQuiz.question_1)
-async def process_question_1(message: Message, state: FSMContext):
-    """Обработка ответа на первый вопрос"""
-    await state.update_data(answer_1=message.text)
-    await message.answer(QUESTIONS[2], parse_mode=ParseMode.MARKDOWN)
-    await state.set_state(MovieQuiz.question_2)
+@dp.message(Command("mode_expert"))
+async def cmd_mode_expert(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    await apply_mode(message, user_id, "expert", "команда")
 
 
-@dp.message(MovieQuiz.question_2)
-async def process_question_2(message: Message, state: FSMContext):
-    """Обработка ответа на второй вопрос"""
-    await state.update_data(answer_2=message.text)
-    await message.answer(QUESTIONS[3], parse_mode=ParseMode.MARKDOWN)
-    await state.set_state(MovieQuiz.question_3)
+@dp.message(Command("mode_friend"))
+async def cmd_mode_friend(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    await apply_mode(message, user_id, "friend", "команда")
 
 
-@dp.message(MovieQuiz.question_3)
-async def process_question_3(message: Message, state: FSMContext):
-    """Обработка ответа на третий вопрос"""
-    await state.update_data(answer_3=message.text)
-    await message.answer(QUESTIONS[4], parse_mode=ParseMode.MARKDOWN)
-    await state.set_state(MovieQuiz.question_4)
+@dp.message(Command("mode_critic"))
+async def cmd_mode_critic(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    await apply_mode(message, user_id, "critic", "команда")
 
 
-@dp.message(MovieQuiz.question_4)
-async def process_question_4(message: Message, state: FSMContext):
-    """Обработка ответа на четвёртый вопрос"""
-    await state.update_data(answer_4=message.text)
-    await message.answer(QUESTIONS[5], parse_mode=ParseMode.MARKDOWN)
-    await state.set_state(MovieQuiz.question_5)
+@dp.message(Command("mode_default"))
+async def cmd_mode_default(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    await apply_mode(message, user_id, "default", "команда")
 
 
-@dp.message(MovieQuiz.question_5)
-async def process_question_5(message: Message, state: FSMContext):
-    """Обработка последнего ответа и формирование рекомендаций"""
-    await state.update_data(answer_5=message.text)
-    
-    # Получаем все ответы
-    data = await state.get_data()
-    
-    # Формируем запрос к GigaChat
-    user_request = f"""
-Пользователь ответил на вопросы о предпочтениях для выбора фильма:
-
-1. Настроение и жанр: {data['answer_1']}
-2. Длительность: {data['answer_2']}
-3. Мозговая нагрузка: {data['answer_3']}
-4. Интересы: {data['answer_4']}
-5. Период кино: {data['answer_5']}
-
-Подбери 3-4 фильма, которые идеально подойдут под эти предпочтения.
-"""
-    
-    system_prompt = """Ты ассистент чат-бота "Чтосмотреть". Твоя задача - рекомендовать фильмы на основе предпочтений пользователя.
-
-Правила:
-1. Предложи ровно 3-4 конкретных фильма
-2. Для каждого фильма укажи:
-   - Название (с годом выпуска)
-   - Краткое описание (2-3 предложения)
-   - Почему этот фильм подходит под запрос пользователя
-3. Тон: Дружелюбный, энтузиастичный, помогающий
-4. Используй эмодзи для оформления
-5. Используй Markdown для форматирования (жирный текст для названий фильмов)
-6. Язык: Русский
-
-Формат ответа:
-🎬 **Название фильма (год)**
-Краткое описание фильма...
-✨ Подходит потому что...
-
-[повторить для каждого фильма]
-
-В конце пожелай приятного просмотра! 🍿"""
-    
-    await message.chat.do("typing")
-    
+@dp.callback_query(F.data.startswith("mode:"))
+async def on_mode_click(callback: CallbackQuery):
+    user_id = callback.from_user.id if callback.from_user else 0
+    mode = callback.data.split(":", maxsplit=1)[1]
+    await set_state(user_id, mode=mode)
     try:
-        # Отправляем запрос в GigaChat
-        response = await ask_gigachat(user_request, system_prompt=system_prompt)
-        
-        # Очищаем состояние
-        await state.clear()
-        
-        # Отправляем рекомендации
-        intro = "🎯 Отлично! Вот что я подобрал для тебя:\n\n"
-        await message.answer(intro + response, parse_mode=ParseMode.MARKDOWN)
-        
-        # Предлагаем начать заново
-        await asyncio.sleep(2)
-        await message.answer(
-            "Хочешь подобрать ещё фильм? Просто напиши /start! 🎬",
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-    except Exception as e:
-        print(f"Ошибка при получении рекомендаций: {e}")
-        await state.clear()
-        await message.answer(
-            "❌ Произошла ошибка при формировании рекомендаций. "
-            "Попробуй начать заново с помощью /start",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        await callback.message.edit_reply_markup(reply_markup=build_mode_keyboard())
+    except TelegramBadRequest:
+        # Сообщение уже имеет такую же разметку — игнорируем
+        pass
+    await callback.answer(f"Режим {mode} активирован.")
+
+
+def trim_history(history: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    return history[-20:]
 
 
 @dp.message(F.text)
-async def handle_other_messages(message: Message):
-    """Обработка сообщений вне диалога"""
-    await message.answer(
-        "👋 Привет! Чтобы я помог тебе выбрать фильм, используй команду /start\n\n"
-        "Я задам тебе 5 вопросов и подберу идеальные варианты для просмотра! 🎬",
-        parse_mode=ParseMode.MARKDOWN
-    )
+async def handle_message(message: Message):
+    user_id = message.from_user.id if message.from_user else 0
+    text = message.text or ""
+    lower_text = text.lower()
+
+    state = await get_state(user_id)
+    mode = state["mode"]
+
+    if mode == "default" and any(word in lower_text for word in KEYWORDS):
+        mode = "expert"
+        await set_state(user_id, mode=mode)
+        await message.answer("Вижу, речь о квартирах — переключаюсь в режим *expert*.")
+
+    await message.chat.do("typing")
+
+    messages = [{"role": "system", "content": PROMPTS.get(mode, DEFAULT_PROMPT)}]
+    messages.extend(state["history"][-18:])
+    messages.append({"role": "user", "content": text})
+
+    try:
+        reply = await chat_gigachat(messages)
+        new_history = trim_history(
+            state["history"] + [{"role": "user", "content": text}, {"role": "assistant", "content": reply}]
+        )
+        await set_state(user_id, history=new_history)
+        await message.answer(reply)
+    except Exception as exc:
+        await message.answer("⚠️ Не удалось получить ответ от модели. Попробуй ещё раз.")
+        print(f"GigaChat error: {exc}")
 
 
 async def main():
-    print("🚀 Бот 'Чтосмотреть' запущен!")
+    print("🚀 Бот для подбора квартир запущен!")
     await dp.start_polling(bot)
 
 

@@ -1,11 +1,23 @@
 import aiohttp
 import os
+import time
 import uuid
+from typing import List, Dict, Any
 
 GIGA_OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
 GIGA_CHAT_URL = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
 
-async def get_giga_token():
+TOKEN_CACHE: Dict[str, Any] = {"access_token": None, "expires_at": 0.0}
+
+
+def _is_token_valid() -> bool:
+    return bool(TOKEN_CACHE["access_token"]) and time.time() < float(TOKEN_CACHE["expires_at"])
+
+
+async def get_giga_token() -> str:
+    if _is_token_valid():
+        return str(TOKEN_CACHE["access_token"])
+
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
         "Accept": "application/json",
@@ -14,23 +26,29 @@ async def get_giga_token():
     }
     data = "scope=GIGACHAT_API_PERS"
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         async with session.post(GIGA_OAUTH_URL, headers=headers, data=data) as resp:
             js = await resp.json()
-            return js["access_token"]
+            token = js["access_token"]
+            expires_at = js.get("expires_at")
+            expires_in = js.get("expires_in")
 
-async def ask_gigachat(user_text: str, system_prompt: str = None, return_full: bool = False):
+            if isinstance(expires_at, (int, float)):
+                TOKEN_CACHE["expires_at"] = float(expires_at)
+            elif expires_in:
+                TOKEN_CACHE["expires_at"] = time.time() + float(expires_in) - 30
+            else:
+                TOKEN_CACHE["expires_at"] = time.time() + 25 * 60
+
+            TOKEN_CACHE["access_token"] = token
+            return token
+
+
+async def chat_gigachat(messages: List[Dict[str, str]], *, temperature: float = 0.7) -> str:
     """
-    Отправляет запрос в GigaChat API.
-    
-    Args:
-        user_text: Текст запроса пользователя
-        system_prompt: Системный промпт (если None, используется базовый)
-        return_full: Если True, возвращает полный JSON ответ,
-                     если False, возвращает только текст ответа
-    
-    Returns:
-        dict или str в зависимости от параметра return_full
+    Отправляет список сообщений (chat completions) в GigaChat.
+    messages: [{'role': 'system'|'user'|'assistant', 'content': '...'}, ...]
+    temperature: "температура" выборки модели, по умолчанию 0.7
     """
     token = await get_giga_token()
     headers = {
@@ -38,23 +56,23 @@ async def ask_gigachat(user_text: str, system_prompt: str = None, return_full: b
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
-    
-    if system_prompt is None:
-        system_prompt = "Ты дружелюбный Telegram-бот, отвечай кратко и по делу. Используй Markdown для форматирования текста (жирный **текст**, курсив *текст*, код `код`)."
-    
+
     payload = {
         "model": "GigaChat",
+        "temperature": temperature,
         "stream": False,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ],
+        "messages": messages,
     }
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=False)) as session:
         async with session.post(GIGA_CHAT_URL, headers=headers, json=payload) as resp:
-            js = await resp.json()
-            if return_full:
-                return js
-            else:
-                return js["choices"][0]["message"]["content"]
+            data = await resp.json(content_type=None)
+
+            if resp.status != 200:
+                raise RuntimeError(f"GigaChat HTTP {resp.status}: {data}")
+
+            choices = data.get("choices")
+            if not choices:
+                raise RuntimeError(f"GigaChat response missing choices: {data}")
+
+            return choices[0]["message"]["content"]
