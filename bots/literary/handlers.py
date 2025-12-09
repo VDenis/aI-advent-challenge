@@ -1,15 +1,12 @@
-import asyncio
-import os
+"""Handlers for the literary bot that demonstrates temperature changes."""
+
 from typing import Dict, List, Optional
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram import Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message
-from dotenv import load_dotenv
 
-from gigachat_client import chat_gigachat
+from services.gigachat import chat_gigachat
 
 SYSTEM_PROMPT = "Ты креативный писатель для сериалов с большим эго."
 TEMPERATURES: List[float] = [0.0, 0.7, 1.2]
@@ -19,10 +16,7 @@ async def generate_responses_with_temperatures(
     text: str,
     history: Optional[List[Dict[str, str]]] = None,
 ) -> List[str]:
-    """
-    Возвращает ответы модели для трёх температур: 0.0, 0.7, 1.2.
-    history (опционально) — предшествующие сообщения диалога.
-    """
+    """Return responses for several temperatures for comparison."""
     base_messages: List[Dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if history:
         base_messages.extend(history)
@@ -36,14 +30,6 @@ async def generate_responses_with_temperatures(
     return responses
 
 
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
-dp = Dispatcher()
-
-
-@dp.message(CommandStart())
 async def cmd_start(message: Message):
     intro = (
         "👋 Я бот, который показывает, как меняется ответ модели при разных температурах.\n"
@@ -52,7 +38,6 @@ async def cmd_start(message: Message):
     await message.answer(intro)
 
 
-@dp.message(F.text)
 async def handle_text(message: Message):
     text = message.text or ""
     await message.chat.do("typing")
@@ -66,10 +51,7 @@ async def handle_text(message: Message):
         print(f"GigaChat error (temperature bot): {exc}")
 
 
-async def main():
-    print("🚀 Бот с разными температурами запущен!")
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+def register_handlers(dp: Dispatcher) -> None:
+    """Attach handlers to the dispatcher."""
+    dp.message.register(cmd_start, CommandStart())
+    dp.message.register(handle_text, F.text)

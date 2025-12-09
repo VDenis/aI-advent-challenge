@@ -1,21 +1,13 @@
-import asyncio
-import os
+"""Handlers for the real estate Telegram bot."""
+
 from typing import Dict, List, Literal, TypedDict
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.filters import Command, CommandStart
+from aiogram import Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-)
-from dotenv import load_dotenv
+from aiogram.filters import Command, CommandStart
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from gigachat_client import chat_gigachat
+from services.gigachat import chat_gigachat
 
 EXPERT_PROMPT = """Ты — эксперт по подбору квартир в новостройках и на вторичном рынке. Твоя задача — помогать пользователю найти оптимальную квартиру под его запрос: бюджет, количество комнат, район, транспортная доступность, инфраструктура, сроки сдачи и т.п. Всегда сначала уточняй критерии, если их не хватает для осознанной рекомендации. Объясняй свои рекомендации простым понятным языком, без канцелярита. Давай структурированные ответы: краткий вывод, затем список подходящих вариантов с короткими комментариями, плюсы и минусы для каждого."""
 
@@ -24,13 +16,6 @@ FRIEND_PROMPT = """Ты — дружелюбный, но при этом раз�
 CRITIC_PROMPT = """Ты — строгий и требовательный критик при выборе квартиры. Твоя задача — искать слабые места в каждом варианте: завышенная цена, неудачная планировка, проблемы с локацией, риски по срокам сдачи, слабая инфраструктура, шум, транспорт и т.д. Будь прямолинейным, но не оскорбительным: критикуй варианты, а не пользователя. Каждый раз, когда пользователь предлагает вариант или критерий, сначала перечисляй возможные риски и недостатки, затем давай взвешенный вывод: «если для тебя Х не критично — вариант можно рассматривать / лучше поискать альтернативу». Не соглашайся автоматически, всегда проверяй, не есть ли за запросом скрытые проблемы (переплата, завышенные ожидания, недооценка района и т.п.)."""
 
 DEFAULT_PROMPT = """Ты — умный помощник для поиска и анализа информации о квартирах и недвижимости, но также можешь отвечать на общие вопросы. По умолчанию общайся нейтрально и вежливо, структурируй ответы и по возможности уточняй цель пользователя, если запрос выглядит неполным или расплывчатым. Если пользователь начинает обсуждать покупку или аренду квартиры, автоматически переходи к поведению эксперта по подбору квартир: уточняй критерии, помогай формулировать запрос и объясняй плюсы и минусы решений. Если пользователь просит дружеский совет или «покритикуй мой вариант», можешь адаптировать стиль под более дружелюбный или критичный, но сохраняй рациональность и пользу."""
-
-load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
-dp = Dispatcher()
 
 
 class ConversationState(TypedDict):
@@ -83,7 +68,6 @@ async def apply_mode(message: Message, user_id: int, mode: str, source: str) -> 
     await message.answer(f"Режим переключён на *{mode}* ({source}).\n{note}")
 
 
-@dp.message(CommandStart())
 async def cmd_start(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     await set_state(user_id, mode="default", history=[])
@@ -96,38 +80,32 @@ async def cmd_start(message: Message):
     await message.answer(intro, reply_markup=build_mode_keyboard())
 
 
-@dp.message(Command("reset"))
 async def cmd_reset(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     states[user_id] = {"mode": "default", "history": []}
     await message.answer("История очищена, режим сброшен на *default*.")
 
 
-@dp.message(Command("mode_expert"))
 async def cmd_mode_expert(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     await apply_mode(message, user_id, "expert", "команда")
 
 
-@dp.message(Command("mode_friend"))
 async def cmd_mode_friend(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     await apply_mode(message, user_id, "friend", "команда")
 
 
-@dp.message(Command("mode_critic"))
 async def cmd_mode_critic(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     await apply_mode(message, user_id, "critic", "команда")
 
 
-@dp.message(Command("mode_default"))
 async def cmd_mode_default(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     await apply_mode(message, user_id, "default", "команда")
 
 
-@dp.callback_query(F.data.startswith("mode:"))
 async def on_mode_click(callback: CallbackQuery):
     user_id = callback.from_user.id if callback.from_user else 0
     mode = callback.data.split(":", maxsplit=1)[1]
@@ -144,7 +122,6 @@ def trim_history(history: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return history[-20:]
 
 
-@dp.message(F.text)
 async def handle_message(message: Message):
     user_id = message.from_user.id if message.from_user else 0
     text = message.text or ""
@@ -176,10 +153,13 @@ async def handle_message(message: Message):
         print(f"GigaChat error: {exc}")
 
 
-async def main():
-    print("🚀 Бот для подбора квартир запущен!")
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+def register_handlers(dp: Dispatcher) -> None:
+    """Attach handlers to the dispatcher."""
+    dp.message.register(cmd_start, CommandStart())
+    dp.message.register(cmd_reset, Command("reset"))
+    dp.message.register(cmd_mode_expert, Command("mode_expert"))
+    dp.message.register(cmd_mode_friend, Command("mode_friend"))
+    dp.message.register(cmd_mode_critic, Command("mode_critic"))
+    dp.message.register(cmd_mode_default, Command("mode_default"))
+    dp.callback_query.register(on_mode_click, F.data.startswith("mode:"))
+    dp.message.register(handle_message, F.text)
