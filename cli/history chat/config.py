@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin
 
@@ -27,8 +28,8 @@ DEFAULT_MODEL = "GigaChat"
 DEFAULT_REQUEST_TIMEOUT = 60.0
 
 # Conversation handling defaults.
-SUMMARY_EVERY_USER_MESSAGES = 10
-SUMMARY_PAIR_BATCH = 10
+SUMMARY_EVERY_USER_MESSAGES = 5
+SUMMARY_PAIR_BATCH = 5
 
 # Pricing hooks (per 1k tokens). Values can be adjusted later.
 PRICE_INPUT_PER_1K = 0.0
@@ -36,6 +37,10 @@ PRICE_OUTPUT_PER_1K = 0.0
 
 # Optional system prompt to keep at the top of history.
 DEFAULT_SYSTEM_PROMPT: Optional[str] = None
+
+# Session memory defaults.
+DEFAULT_MEMORY_FILE = Path(__file__).resolve().parents[2] / ".chat_memory.json"
+DEFAULT_SESSION_LIST_LIMIT = 5
 
 
 def _bool_from_env(value: str, *, default: bool = True) -> bool:
@@ -60,9 +65,11 @@ class Settings:
     price_input_per_1k: float
     price_output_per_1k: float
     system_prompt: Optional[str] = None
+    memory_file: Path = DEFAULT_MEMORY_FILE
+    session_list_limit: int = DEFAULT_SESSION_LIST_LIMIT
 
 
-def load_settings() -> Settings:
+def load_settings(*, memory_file: Optional[Path] = None, session_list_limit: Optional[int] = None) -> Settings:
     """Load settings from environment with sensible defaults."""
     base_url = os.getenv("GIGA_API_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     chat_url = os.getenv(
@@ -75,6 +82,12 @@ def load_settings() -> Settings:
         raise RuntimeError("GIGA_CLIENT_BASIC is required but not set in .env")
 
     verify_ssl = _bool_from_env(os.getenv("GIGA_VERIFY_SSL", ""), default=True)
+    memory_file_path = Path(
+        memory_file
+        or os.getenv("CHAT_MEMORY_FILE")
+        or DEFAULT_MEMORY_FILE
+    ).expanduser().resolve()
+    list_limit = session_list_limit or int(os.getenv("CHAT_MEMORY_LIST_LIMIT", DEFAULT_SESSION_LIST_LIMIT))
 
     return Settings(
         base_url=base_url,
@@ -89,4 +102,6 @@ def load_settings() -> Settings:
         price_input_per_1k=float(os.getenv("PRICE_INPUT_PER_1K", PRICE_INPUT_PER_1K)),
         price_output_per_1k=float(os.getenv("PRICE_OUTPUT_PER_1K", PRICE_OUTPUT_PER_1K)),
         system_prompt=os.getenv("GIGA_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT) or None,
+        memory_file=memory_file_path,
+        session_list_limit=list_limit,
     )

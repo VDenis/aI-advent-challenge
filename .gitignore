@@ -201,6 +201,11 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Chat memory files
+.chat_memory.json
+.chat_memory.json.bak
+.pyc_cache/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
