@@ -8,6 +8,7 @@
 - 🛠 `cli/hf_cli.py` — CLI для одиночных запросов и сравнения моделей Hugging Face.
 - 🧮 `cli/hf_llama3_openai.py` — CLI для Llama 3 через OpenAI-совместимый API Hugging Face с локальным подсчётом токенов.
 - 💬 `cli/history chat/console_chat.py` — консольный REPL-клиент для GigaChat с подсчётом токенов и сжатием истории.
+- 🗂 `cli/gigachat_mcp_cli.py` — консольный чат с GigaChat и инструментами файловой системы через MCP stdio сервер.
 
 ## Требования
 
@@ -26,7 +27,7 @@ HF_TOKEN=токен_hugging_face_api
 GIGA_CLIENT_BASIC=base64(client_id:client_secret)
 ```
 
-Установка зависимостей:
+Установка зависимостей (нужен Python 3.10+):
 
 ```bash
 python3 -m venv venv
@@ -166,6 +167,97 @@ GIGA_MODEL_NAME=GigaChat
 - Конфиг и клиент: `services/huggingface/config.py` и `services/huggingface/client.py`.
 - Поддерживаемые короткие имена моделей: `deepseek`, `llama3`, `qwen2` (мапятся на актуальные id в Hub).
 - CLI (`cli/hf_cli.py`) позволяет делать одиночные запросы и сравнивать три модели по одному prompt, печатая время ответа, примерное число токенов и стоимость (заполни цены в конфиге при необходимости).
+
+## MCP Filesystem Sandbox (stdio)
+
+Небольшой MCP-сервер, который безопасно проксирует операции с файлами только внутри заданных директорий. Используется протокол Model Context Protocol (stdio transport), поэтому его можно добавить в Cursor как внешний сервер.
+
+- Код: пакет `mcp_filesystem_sandbox` (см. `pyproject.toml`).
+- Требование безопасности: хотя бы одна `--allow` директория при старте, все пути нормализуются, `realpath` + проверка на вхождение в allowlist, попытки выхода наружу дают ошибку `Access denied: ...`.
+- TODO: поддержка Roots протокола (подмена allowlist roots, list_changed) будет добавлена, когда появится в Python SDK.
+
+Установка (локально в этом репо):
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+```
+
+Запуск сервера:
+
+```bash
+python -m mcp_filesystem_sandbox.server --allow /abs/safe1 --allow /abs/safe2
+# или установленным скриптом:
+mcp-filesystem-sandbox --allow /abs/safe1
+```
+
+Инструменты (возвращают JSON-объекты):
+
+- `list_allowed_directories()` — текущий allowlist.
+- `read_text_file(path, head?:int, tail?:int)` — UTF-8, head/tail по строкам, если указаны оба — используется head.
+- `read_multiple_files(paths: string[])` — агрегирует частичные ошибки.
+- `write_file(path, content)` — создаёт/перезаписывает, родительские директории создаются автоматически.
+- `create_directory(path)` — mkdir -p.
+- `list_directory(path)` — `[DIR]/[FILE] name` список.
+- `move_file(source, destination)` — destination не должен существовать, родитель создаётся.
+- `search_files(path, pattern, excludePatterns?)` — regex (case-insensitive) по относительному пути; excludePatterns — glob-ы по полному пути.
+- `get_file_info(path)` — size/mtime/permissions/is_dir.
+
+Пример конфигурации Cursor (`settings.json` → MCP Servers):
+
+```json
+{
+  "name": "filesystem-sandbox",
+  "command": "python",
+  "args": [
+    "-m",
+    "mcp_filesystem_sandbox.server",
+    "--allow",
+    "/Users/denis/safe",
+    "--allow",
+    "/Users/denis/other_safe"
+  ]
+}
+```
+
+Примеры запросов инструментов:
+
+- `list_directory("/Users/denis/safe")` → `{"entries": ["[DIR] src", "[FILE] notes.txt"]}`
+- `search_files("/Users/denis/safe", "todo", ["**/node_modules/**"])` → найденные пути.
+- `write_file("/Users/denis/safe/tmp.txt", "hello")` → `{status:"ok"}`.
+- Попытка доступа к `/etc/hosts` вернёт `Access denied: path '/etc/hosts' outside allowed roots [...]`.
+
+Тесты (pyproject optional deps): `pytest tests/test_security.py`.
+
+### gigachat-mcp-cli (GigaChat + MCP Filesystem tools)
+
+Доп. зав. для gigachat-mcp-cli (отдельно, чтобы не конфликтовать с aiogram):
+
+```bash
+pip install -r requirements-mcp.txt  # ставит mcp из Git + pydantic>=2.11
+```
+
+Запуск (нужен хотя бы один `--allow`, либо переменная `MCP_FS_ALLOW` с путями через `:`). MCP-клиент требует SDK из Git (см. установку выше).
+
+```bash
+python cli/gigachat_mcp_cli.py --allow /abs/safe/dir
+# или с явными аргументами для сервера:
+python cli/gigachat_mcp_cli.py --mcp-command python --mcp-args "-m mcp_filesystem_sandbox.server --allow /abs/safe"
+```
+
+Требуются переменные окружения:
+
+- `GIGA_CLIENT_BASIC` — base64(client_id:client_secret)
+- Опционально: `GIGA_CHAT_URL`, `GIGA_OAUTH_URL`, `GIGA_MODEL_NAME`, `GIGA_SCOPE`, `GIGA_TEMPERATURE`, `GIGA_VERIFY_SSL`, `GIGA_REQUEST_TIMEOUT`
+- MCP: `MCP_FS_ALLOW=/path1:/path2` (если не передаёшь `--allow`), `MCP_SERVER_CMD`, `MCP_SERVER_ARGS`, `MCP_MAX_TOOL_LOOPS`
+
+Команды внутри CLI:
+
+- `:exit` — выход
+- `:tools` — перечитать список инструментов MCP
+- `:clear` — сбросить контекст (system prompt + перечень tools)
+
+Поведение: GigaChat получает system prompt с описанием доступных инструментов. Когда нужен вызов инструмента, модель отвечает JSON вида `{"tool":"название","arguments":{...}}`. Клиент выполняет MCP-вызов (stdio) и возвращает результат в контекст для финального ответа.
 
 ## Лицензия
 
