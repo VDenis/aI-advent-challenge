@@ -34,6 +34,10 @@ DEFAULT_SYSTEM_PROMPT = """
 верни строго JSON в одной строке вида {"tool":"имя","arguments":{...}} без текста.
 Если достаточно объяснения, отвечай кратко по-русски. Для опасных действий
 (перезапись/удаление/перемещение) сначала уточни у пользователя.
+
+Важно: инструменты принимают параметр path (а не filename). При создании файла
+или директории всегда указывай path. Если пользователь не задал путь, спроси
+его, не придумывай путь сам.
 """.strip()
 
 
@@ -48,13 +52,10 @@ def split_env_list(value: str) -> List[str]:
     return [part for part in value.split(os.pathsep) if part] if value else []
 
 
-def build_mcp_args(allow: Sequence[str], override: str | None) -> List[str]:
+def build_mcp_args(root: str, override: str | None) -> List[str]:
     if override:
         return shlex.split(override)
-    args: List[str] = ["-m", "mcp_filesystem_sandbox.server"]
-    for path in allow:
-        args.extend(["--allow", path])
-    return args
+    return ["-m", "mcp_filesystem_sandbox.server", root]
 
 
 @dataclass
@@ -67,7 +68,7 @@ class Settings:
     scope: str
     verify_ssl: bool
     request_timeout: float
-    allow: List[str]
+    root: str
     mcp_command: str
     mcp_args: List[str]
     system_prompt: str
@@ -76,7 +77,7 @@ class Settings:
 
 def load_settings() -> Settings:
     parser = argparse.ArgumentParser(description="gigachat-mcp-cli")
-    parser.add_argument("--allow", action="append", help="Разрешённые директории для MCP FS сервера")
+    parser.add_argument("--root", help="Корень файловой песочницы MCP (по умолчанию ./mcp_fs_root)")
     parser.add_argument("--system-prompt", help="Кастомный system prompt для GigaChat")
     parser.add_argument("--model", default=os.getenv("GIGA_MODEL_NAME", "GigaChat"))
     parser.add_argument("--temperature", type=float, default=float(os.getenv("GIGA_TEMPERATURE", "0.7")))
@@ -91,12 +92,13 @@ def load_settings() -> Settings:
 
     args = parser.parse_args()
 
-    allow_env = split_env_list(os.getenv("MCP_FS_ALLOW", ""))
-    allow = args.allow or allow_env
-    if not allow:
-        raise SystemExit("Нужно указать хотя бы один --allow или MCP_FS_ALLOW для файлового MCP сервера.")
+    root_arg = args.root or os.getenv("MCP_FS_ROOT")
+    if not root_arg:
+        # Значение по умолчанию: поддиректория в корне проекта, преобразуется в абсолютный путь.
+        root_arg = str((ROOT_DIR / "mcp_fs_root").resolve())
+    root_arg = str(Path(root_arg).expanduser().resolve(strict=False))
 
-    mcp_args = build_mcp_args(allow, args.mcp_args)
+    mcp_args = build_mcp_args(root_arg, args.mcp_args) if root_arg else shlex.split(args.mcp_args)
     basic_auth = os.getenv("GIGA_CLIENT_BASIC", "")
     if not basic_auth:
         raise SystemExit("Не задан GIGA_CLIENT_BASIC (base64(client_id:client_secret)).")
@@ -112,7 +114,7 @@ def load_settings() -> Settings:
         scope=args.scope,
         verify_ssl=args.verify_ssl,
         request_timeout=args.request_timeout,
-        allow=list(allow),
+        root=str(root_arg) if root_arg else "",
         mcp_command=args.mcp_command,
         mcp_args=mcp_args,
         system_prompt=system_prompt,
@@ -199,7 +201,14 @@ def serialize_tool_result(result_obj: Any) -> Dict[str, Any]:
         return {"is_error": False, "content": [], "structured": None}
     is_error = bool(getattr(result_obj, "isError", False))
     content = getattr(result_obj, "content", None)
-    structured = getattr(result_obj, "structuredContent", None)
+    structured = None
+    # mcp/client returns "structured" per spec; fastmcp may expose "structuredContent"
+    if hasattr(result_obj, "structured"):
+        structured = getattr(result_obj, "structured")
+    elif hasattr(result_obj, "structuredContent"):
+        structured = getattr(result_obj, "structuredContent")
+    elif isinstance(result_obj, dict):
+        structured = result_obj
     rendered = []
     try:
         for entry in content or []:

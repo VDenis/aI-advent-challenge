@@ -17,27 +17,27 @@ def normalize_path(user_path: str) -> Path:
     can still be validated against the sandbox.
     """
     if not user_path:
-        raise SandboxViolation("Access denied: empty path is not allowed.")
+        raise SandboxViolation("Доступ запрещен: путь не может быть пустым.")
 
     path = Path(user_path).expanduser()
     try:
         return path.resolve(strict=False)
     except Exception as exc:  # pragma: no cover - unlikely on supported OSes
-        raise SandboxViolation(f"Failed to resolve path '{user_path}': {exc}") from exc
+        raise SandboxViolation(f"Не удалось разобрать путь '{user_path}': {exc}") from exc
 
 
 def assert_allowed(path: Path, allowed_roots: Iterable[Path]) -> None:
     """Ensure the path is within at least one allowed root (inclusive)."""
     roots = list(allowed_roots)
     if not roots:
-        raise SandboxViolation("Access denied: no allowed roots configured.")
+        raise SandboxViolation("Доступ запрещен: разрешенные каталоги не настроены.")
 
     for root in roots:
         if path == root or path.is_relative_to(root):
             return
 
     allowed_str = ", ".join(str(r) for r in roots)
-    raise SandboxViolation(f"Access denied: path '{path}' outside allowed roots [{allowed_str}].")
+    raise SandboxViolation(f"Доступ запрещен: путь '{path}' вне разрешенных каталогов [{allowed_str}].")
 
 
 def safe_join(root: Path, user_path: str) -> Path:

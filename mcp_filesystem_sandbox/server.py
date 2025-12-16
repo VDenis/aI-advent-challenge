@@ -1,41 +1,71 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import re
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from .security import SandboxViolation, assert_allowed, normalize_path
 
 server = FastMCP("filesystem-sandbox")
-allowed_roots: list[Path] = []
+sandbox_root: Path | None = None
 
 
-def set_allowed_roots(raw_roots: Iterable[str]) -> None:
-    """Initialize allowed roots from CLI args."""
-    global allowed_roots
-    normalized = [normalize_path(path) for path in raw_roots]
-    if not normalized:
-        raise SandboxViolation("At least one --allow path is required.")
-    allowed_roots = normalized
+def configure_sandbox_root(raw_root: str) -> Path:
+    """
+    Initialize the single sandbox root.
+
+    The directory is created if it does not exist. All subsequent operations
+    are confined to this root.
+    """
+    global sandbox_root
+    root = normalize_path(raw_root)
+    if root.exists() and not root.is_dir():
+        raise SandboxViolation(f"Корневой путь должен быть директорией: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+    sandbox_root = root
+    return root
 
 
-def ensure_allowed(path_str: str) -> Path:
-    """Normalize and validate a user-supplied path."""
-    path = normalize_path(path_str)
-    assert_allowed(path, allowed_roots)
-    return path
+def require_sandbox_root() -> Path:
+    if sandbox_root is None:
+        raise SandboxViolation("Корневой каталог песочницы не настроен. Перезапустите с путём.")
+    return sandbox_root
 
 
-def require_allowed_roots() -> None:
-    if not allowed_roots:
-        raise SandboxViolation("Access denied: server has no allowed directories configured.")
+def _relative_to_root(path: Path) -> str:
+    root = require_sandbox_root()
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
+def resolve_path(path_str: Optional[str]) -> Path:
+    """
+    Resolve an incoming path within the configured sandbox root.
+
+    - Relative paths are joined to the sandbox root.
+    - Absolute paths are allowed only if they remain inside the sandbox root.
+    - Empty/None/".": refer to the sandbox root itself.
+    """
+    root = require_sandbox_root()
+
+    if not path_str or path_str.strip() in {".", "/"}:
+        candidate = root
+    else:
+        cleaned = path_str.strip()
+        user_path = Path(cleaned)
+        if user_path.is_absolute():
+            candidate = normalize_path(cleaned)
+        else:
+            candidate = normalize_path(str(root / user_path))
+
+    assert_allowed(candidate, [root])
+    return candidate
 
 
 def _read_file_lines(path: Path, head: Optional[int], tail: Optional[int]) -> str:
@@ -70,9 +100,9 @@ def _read_file_lines(path: Path, head: Optional[int], tail: Optional[int]) -> st
 
 @server.tool()
 async def list_allowed_directories() -> list[str]:
-    """Return the current allowlist."""
-    require_allowed_roots()
-    return [str(p) for p in allowed_roots]
+    """Return the configured sandbox root (single-item list)."""
+    root = require_sandbox_root()
+    return [str(root)]
 
 
 @server.tool()
@@ -81,15 +111,14 @@ async def read_text_file(path: str, head: Optional[int] = None, tail: Optional[i
     Read a UTF-8 text file with optional head/tail limits (by lines).
     If both head and tail are provided, head takes precedence.
     """
-    require_allowed_roots()
-    target = ensure_allowed(path)
+    target = resolve_path(path)
     if not target.exists():
-        raise SandboxViolation(f"File not found: {target}")
+        raise SandboxViolation(f"Файл не найден: {target}")
     if target.is_dir():
-        raise SandboxViolation(f"Cannot read directory as file: {target}")
+        raise SandboxViolation(f"Нельзя читать директорию как файл: {target}")
 
     content = _read_file_lines(target, head, tail)
-    return {"path": str(target), "content": content}
+    return {"path": str(target), "relative_path": _relative_to_root(target), "content": content}
 
 
 @server.tool()
@@ -101,7 +130,9 @@ async def read_multiple_files(paths: List[str]) -> list[dict]:
     for path in paths:
         try:
             entry = await read_text_file(path)
-            results.append({"path": entry["path"], "content": entry["content"]})
+            results.append(
+                {"path": entry["path"], "relative_path": entry["relative_path"], "content": entry["content"]}
+            )
         except Exception as exc:
             results.append({"path": str(path), "error": str(exc)})
     return results
@@ -110,110 +141,58 @@ async def read_multiple_files(paths: List[str]) -> list[dict]:
 @server.tool()
 async def write_file(path: str, content: str) -> dict:
     """Create or overwrite a file with UTF-8 content."""
-    require_allowed_roots()
-    target = ensure_allowed(path)
+    target = resolve_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and target.is_dir():
+        raise SandboxViolation(f"Нельзя перезаписать директорию: {target}")
     with target.open("w", encoding="utf-8") as f:
         f.write(content)
-    return {"path": str(target), "status": "ok"}
+    return {"path": str(target), "relative_path": _relative_to_root(target), "status": "ok"}
 
 
 @server.tool()
 async def create_directory(path: str) -> dict:
     """mkdir -p equivalent; succeeds if already exists."""
-    require_allowed_roots()
-    target = ensure_allowed(path)
+    target = resolve_path(path)
+    if target.exists() and target.is_file():
+        raise SandboxViolation(f"Файл с таким именем уже существует: {target}")
     target.mkdir(parents=True, exist_ok=True)
-    return {"path": str(target), "status": "ok"}
+    return {"path": str(target), "relative_path": _relative_to_root(target), "status": "ok"}
 
 
 @server.tool()
-async def list_directory(path: str) -> dict:
-    """List directory entries with simple [DIR]/[FILE] prefixes."""
-    require_allowed_roots()
-    target = ensure_allowed(path)
+async def list_directory(path: str = ".") -> dict:
+    """List files and folders within the sandbox root."""
+    target = resolve_path(path)
     if not target.exists():
-        raise SandboxViolation(f"Path not found: {target}")
+        raise SandboxViolation(f"Путь не найден: {target}")
     if not target.is_dir():
-        raise SandboxViolation(f"Not a directory: {target}")
+        raise SandboxViolation(f"Это не директория: {target}")
 
-    entries: list[str] = []
+    entries: list[dict] = []
     for child in sorted(target.iterdir(), key=lambda p: p.name.lower()):
-        prefix = "[DIR]" if child.is_dir() else "[FILE]"
-        entries.append(f"{prefix} {child.name}")
-    return {"path": str(target), "entries": entries}
-
-
-@server.tool()
-async def move_file(source: str, destination: str) -> dict:
-    """Move/rename a file or directory; destination must not exist."""
-    require_allowed_roots()
-    src_path = ensure_allowed(source)
-    dst_path = ensure_allowed(destination)
-
-    if not src_path.exists():
-        raise SandboxViolation(f"Source not found: {src_path}")
-    if dst_path.exists():
-        raise SandboxViolation(f"Destination already exists: {dst_path}")
-
-    dst_path.parent.mkdir(parents=True, exist_ok=True)
-    src_path.rename(dst_path)
-    return {"status": "ok", "source": str(src_path), "destination": str(dst_path)}
-
-
-def _matches_exclude(path: Path, patterns: list[str]) -> bool:
-    return any(path.match(pat) for pat in patterns)
-
-
-@server.tool()
-async def search_files(path: str, pattern: str, excludePatterns: Optional[List[str]] = None) -> dict:
-    """
-    Search for files whose relative path matches a case-insensitive regex.
-    excludePatterns uses glob semantics applied to full paths.
-    """
-    require_allowed_roots()
-    base = ensure_allowed(path)
-    if not base.is_dir():
-        raise SandboxViolation(f"Search root must be a directory: {base}")
-
-    regex = re.compile(pattern, re.IGNORECASE)
-    exclude = excludePatterns or []
-    matches: list[str] = []
-
-    for root, dirs, files in os.walk(base, followlinks=False):
-        root_path = Path(root)
-        dirs[:] = [d for d in dirs if not _matches_exclude(root_path / d, exclude)]
-        for name in files:
-            candidate = root_path / name
-            if _matches_exclude(candidate, exclude):
-                continue
-            resolved = candidate.resolve(strict=False)
-            try:
-                assert_allowed(resolved, allowed_roots)
-                rel = resolved.relative_to(base)
-            except SandboxViolation:
-                # Skip anything that would escape via symlink.
-                continue
-            except ValueError:
-                # Symlink into another allowed root: ignore for this search base.
-                continue
-            if regex.search(str(rel)):
-                matches.append(str(resolved))
-
-    return {"path": str(base), "matches": matches}
+        entries.append(
+            {
+                "name": child.name,
+                "type": "directory" if child.is_dir() else "file",
+                "path": str(child),
+                "relative_path": _relative_to_root(child),
+            }
+        )
+    return {"path": str(target), "relative_path": _relative_to_root(target), "entries": entries}
 
 
 @server.tool()
 async def get_file_info(path: str) -> dict:
     """Return basic file metadata."""
-    require_allowed_roots()
-    target = ensure_allowed(path)
+    target = resolve_path(path)
     if not target.exists():
-        raise SandboxViolation(f"Path not found: {target}")
+        raise SandboxViolation(f"Путь не найден: {target}")
 
     stats = target.stat()
     info = {
         "path": str(target),
+        "relative_path": _relative_to_root(target),
         "is_dir": target.is_dir(),
         "size": stats.st_size,
         "modified": datetime.fromtimestamp(stats.st_mtime).isoformat(),
@@ -227,16 +206,10 @@ async def get_file_info(path: str) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Filesystem sandbox MCP server (stdio).")
-    parser.add_argument(
-        "--allow",
-        action="append",
-        dest="allowed",
-        required=True,
-        help="Absolute directory to allow (repeatable).",
-    )
+    parser.add_argument("root", help="Directory to sandbox all operations.")
     args = parser.parse_args()
 
-    set_allowed_roots(args.allowed)
+    configure_sandbox_root(args.root)
     server.run("stdio")
 
 

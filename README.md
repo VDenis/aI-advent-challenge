@@ -170,10 +170,10 @@ GIGA_MODEL_NAME=GigaChat
 
 ## MCP Filesystem Sandbox (stdio)
 
-Небольшой MCP-сервер, который безопасно проксирует операции с файлами только внутри заданных директорий. Используется протокол Model Context Protocol (stdio transport), поэтому его можно добавить в Cursor как внешний сервер.
+Небольшой MCP-сервер, который безопасно проксирует операции с файлами только внутри одного корневого каталога. Используется протокол Model Context Protocol (stdio transport), поэтому его можно добавить в Cursor как внешний сервер.
 
 - Код: пакет `mcp_filesystem_sandbox` (см. `pyproject.toml`).
-- Требование безопасности: хотя бы одна `--allow` директория при старте, все пути нормализуются, `realpath` + проверка на вхождение в allowlist, попытки выхода наружу дают ошибку `Access denied: ...`.
+- Требование безопасности: при старте передаётся единственный корневой каталог (positional аргумент), все пути нормализуются и проверяются на вхождение в этот корень; попытки выхода наружу дают ошибку.
 - TODO: поддержка Roots протокола (подмена allowlist roots, list_changed) будет добавлена, когда появится в Python SDK.
 
 Установка (локально в этом репо):
@@ -183,24 +183,22 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-Запуск сервера:
+Запуск сервера (создаст корень, если его ещё нет):
 
 ```bash
-python -m mcp_filesystem_sandbox.server --allow /abs/safe1 --allow /abs/safe2
+python -m mcp_filesystem_sandbox.server /abs/safe_root
 # или установленным скриптом:
-mcp-filesystem-sandbox --allow /abs/safe1
+mcp-filesystem-sandbox /abs/safe_root
 ```
 
 Инструменты (возвращают JSON-объекты):
 
-- `list_allowed_directories()` — текущий allowlist.
+- `list_allowed_directories()` — возвращает один корень песочницы.
 - `read_text_file(path, head?:int, tail?:int)` — UTF-8, head/tail по строкам, если указаны оба — используется head.
 - `read_multiple_files(paths: string[])` — агрегирует частичные ошибки.
-- `write_file(path, content)` — создаёт/перезаписывает, родительские директории создаются автоматически.
+- `write_file(path, content)` — создаёт/перезаписывает текстовый файл, родительские директории создаются автоматически.
 - `create_directory(path)` — mkdir -p.
-- `list_directory(path)` — `[DIR]/[FILE] name` список.
-- `move_file(source, destination)` — destination не должен существовать, родитель создаётся.
-- `search_files(path, pattern, excludePatterns?)` — regex (case-insensitive) по относительному пути; excludePatterns — glob-ы по полному пути.
+- `list_directory(path=".")` — список объектов с `name/type/path/relative_path`.
 - `get_file_info(path)` — size/mtime/permissions/is_dir.
 
 Пример конфигурации Cursor (`settings.json` → MCP Servers):
@@ -212,20 +210,16 @@ mcp-filesystem-sandbox --allow /abs/safe1
   "args": [
     "-m",
     "mcp_filesystem_sandbox.server",
-    "--allow",
-    "/Users/denis/safe",
-    "--allow",
-    "/Users/denis/other_safe"
+    "/Users/denis/safe_root"
   ]
 }
 ```
 
 Примеры запросов инструментов:
 
-- `list_directory("/Users/denis/safe")` → `{"entries": ["[DIR] src", "[FILE] notes.txt"]}`
-- `search_files("/Users/denis/safe", "todo", ["**/node_modules/**"])` → найденные пути.
-- `write_file("/Users/denis/safe/tmp.txt", "hello")` → `{status:"ok"}`.
-- Попытка доступа к `/etc/hosts` вернёт `Access denied: path '/etc/hosts' outside allowed roots [...]`.
+- `list_directory(".")` → `{"entries": [{"name":"src","type":"directory"}, {"name":"notes.txt","type":"file"}]}`
+- `write_file("tmp/notes.txt", "hello")` → `{status:"ok"}`
+- Попытка доступа к `/etc/hosts` вернёт ошибку выхода за пределы корня.
 
 Тесты (pyproject optional deps): `pytest tests/test_security.py`.
 
@@ -237,19 +231,19 @@ mcp-filesystem-sandbox --allow /abs/safe1
 pip install -r requirements-mcp.txt  # ставит mcp из Git + pydantic>=2.11
 ```
 
-Запуск (нужен хотя бы один `--allow`, либо переменная `MCP_FS_ALLOW` с путями через `:`). MCP-клиент требует SDK из Git (см. установку выше).
+Запуск (нужен корень песочницы `--root` или `MCP_FS_ROOT`, по умолчанию `./mcp_fs_root` относительно корня проекта, далее преобразуется в абсолютный). MCP-клиент требует SDK из Git (см. установку выше).
 
 ```bash
-python cli/gigachat_mcp_cli.py --allow /abs/safe/dir
-# или с явными аргументами для сервера:
-python cli/gigachat_mcp_cli.py --mcp-command python --mcp-args "-m mcp_filesystem_sandbox.server --allow /abs/safe"
+python cli/gigachat_mcp_cli.py --root /abs/safe_root
+# или с явными аргументами для сервера (перекрывают --root):
+python cli/gigachat_mcp_cli.py --mcp-command python --mcp-args "-m mcp_filesystem_sandbox.server /abs/safe_root"
 ```
 
 Требуются переменные окружения:
 
 - `GIGA_CLIENT_BASIC` — base64(client_id:client_secret)
 - Опционально: `GIGA_CHAT_URL`, `GIGA_OAUTH_URL`, `GIGA_MODEL_NAME`, `GIGA_SCOPE`, `GIGA_TEMPERATURE`, `GIGA_VERIFY_SSL`, `GIGA_REQUEST_TIMEOUT`
-- MCP: `MCP_FS_ALLOW=/path1:/path2` (если не передаёшь `--allow`), `MCP_SERVER_CMD`, `MCP_SERVER_ARGS`, `MCP_MAX_TOOL_LOOPS`
+- MCP: `MCP_FS_ROOT=/abs/safe_root` (если не передаёшь `--root`; по умолчанию берётся `./mcp_fs_root`), `MCP_SERVER_CMD`, `MCP_SERVER_ARGS`, `MCP_MAX_TOOL_LOOPS`
 
 Команды внутри CLI:
 
