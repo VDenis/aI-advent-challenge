@@ -1,19 +1,31 @@
 [project]
-name = "mcp-filesystem-sandbox"
+name = "gigachat-mcp-weather"
 version = "0.1.0"
-description = "MCP stdio server that exposes safe filesystem tools limited to allowed directories."
+description = "GigaChat tool-calling agent that talks to an MCP weather server (Open-Meteo)."
 readme = "README.md"
-requires-python = ">=3.9"
-authors = [{ name = "Filesystem Sandbox", email = "sandbox@example.com" }]
+requires-python = ">=3.10"
+authors = [{ name = "GigaChat Weather", email = "weather@example.com" }]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp==1.1.0",
+    "fastmcp==0.4.0",
+    "httpx==0.27.2",
+    "langchain==0.2.11",
+    "langchain-community==0.2.11",
+    "langchain-mcp-adapters==0.0.4",
+    "python-dotenv==1.0.1",
+    "gigachat==0.1.43",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4"]
 
 [project.scripts]
-mcp-filesystem-sandbox = "mcp_filesystem_sandbox.server:main"
+weather-mcp-server = "weather_mcp.server:main"
+gigachat-weather-agent = "app.main:main"
+
+[tool.setuptools.packages.find]
+include = ["weather_mcp", "app"]
+exclude = ["tests", "venv*", "venvmcp*"]
 
 [build-system]
 requires = ["setuptools>=64", "wheel"]
