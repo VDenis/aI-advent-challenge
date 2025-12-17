@@ -35,7 +35,7 @@ python -m weather_mcp.server
 4) Запусти CLI агента (агент сам подключится к серверу по stdio и выберет tools):
 
 ```bash
-python -m app.main "Какая сейчас температура и ветер в Москве?"
+python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"
 ```
 
 Альтернатива через entrypoints из `pyproject.toml`:
@@ -56,8 +56,8 @@ gigachat-weather-agent "Какая сейчас температура и вет
   - `get_hourly_forecast(latitude, longitude, hours<=168, timezone?)` → температура и влажность по часам.
   - httpx async клиент, таймауты и 2 попытки, валидация диапазонов.
   - Ошибки API возвращаются текстом в ответе tool, сервер не падает.
-- `app.agent`: LangChain‑агент на GigaChat + MultiServerMCPClient. Модель умеет tool-calling (`llm.bind_tools(tools)`), цикл: `модель → tool_calls → выполнить tool → ToolMessage → модель` пока не появится финальный ответ. Стриминг отключён для устойчивого tool-calling. В system prompt добавлено правило: использовать инструменты для вопросов о погоде и не выдумывать значения. Для Москвы захардкожены координаты 55.75, 37.62.
-- `app.main`: CLI. Пример: `python -m app.main "Какая сейчас температура и ветер в Москве?"`.
+- `weather_mcp_cli.agent`: LangChain‑агент на GigaChat + MultiServerMCPClient. Модель умеет tool-calling (`llm.bind_tools(tools)`), цикл: `модель → tool_calls → выполнить tool → ToolMessage → модель` пока не появится финальный ответ. Стриминг отключён для устойчивого tool-calling. В system prompt добавлено правило: использовать инструменты для вопросов о погоде и не выдумывать значения. Для Москвы захардкожены координаты 55.75, 37.62.
+- `weather_mcp_cli.main`: CLI. Пример: `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`.
 - `env.example`: шаблон переменных окружения GigaChat.
 - `pyproject.toml`: зависимости `fastmcp`, `mcp`, `httpx`, `langchain`, `langchain-community`, `langchain-mcp-adapters`, `python-dotenv`.
 - Если tool-calling не срабатывает: убедись, что MCP сервер запущен в отдельном процессе и `.env` с GigaChat данными загружен (перезапусти CLI после изменения env).
@@ -75,6 +75,6 @@ Assistant:
 ## Acceptance checklist
 
 - Запусти CLI агента:
-  - `python -m app.main "Какая сейчас температура и ветер в Москве?"`
+  - `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`
 - В логах должно быть видно, что GigaChat сам инициировал вызов `get_current_weather` (и при необходимости `get_hourly_forecast`).
 - Убедись, что ответ содержит данные из инструмента, а не придуманную погоду.

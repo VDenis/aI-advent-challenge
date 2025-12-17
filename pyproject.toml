@@ -21,10 +21,10 @@ dev = ["pytest>=7.4"]
 
 [project.scripts]
 weather-mcp-server = "weather_mcp.server:main"
-gigachat-weather-agent = "app.main:main"
+gigachat-weather-agent = "weather_mcp_cli.main:main"
 
 [tool.setuptools.packages.find]
-include = ["weather_mcp", "app"]
+include = ["weather_mcp", "weather_mcp_cli"]
 exclude = ["tests", "venv*", "venvmcp*"]
 
 [build-system]
