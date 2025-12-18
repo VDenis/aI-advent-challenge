@@ -178,6 +178,8 @@ class ReminderApp(App):
             self._sse_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._sse_task
+        with contextlib.suppress(Exception):
+            await self.client.aclose()
 
     def _hide_loader(self) -> None:
         if not self._loader_shown:

@@ -48,12 +48,7 @@ def main() -> None:
 
     client = MCPClient(messages_url, sse_url)
     app = ReminderApp(client=client, use_llm=not args.no_llm)
-    try:
-        app.run()
-    finally:
-        import asyncio
-
-        asyncio.run(client.aclose())
+    app.run()
 
 
 if __name__ == "__main__":
