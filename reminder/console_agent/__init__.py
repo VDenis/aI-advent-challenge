@@ -1,0 +1,1 @@
+"""Console MCP agent package."""
