@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List
 
-from .mcp_stdio import MCPStdioClient
+from .mcp_http import MCPHttpClient
 from .types import SearchResult
 
 
 class BraveClient:
-    def __init__(self, command: List[str], env: Optional[Dict[str, str]] = None) -> None:
-        self._client = MCPStdioClient(command=command, name="brave-search", env=env)
+    def __init__(self, base_urls: Iterable[str]) -> None:
+        self._client = MCPHttpClient(base_urls=base_urls, name="brave-search")
 
     async def search(self, query: str, count: int = 10, safesearch: str = "moderate") -> List[SearchResult]:
         result = await self._client.call_tool(
@@ -29,12 +29,15 @@ class BraveClient:
             candidates = structured
         elif isinstance(content, list):
             for entry in content:
+                # MCP Streamable HTTP возвращает массив объектов вида {"type": "text", "text": "<json строка>"}.
                 text = entry.get("text") if isinstance(entry, dict) else None
                 if not text:
                     continue
                 parsed = self._try_parse_json(text)
                 if isinstance(parsed, list):
                     candidates.extend([r for r in parsed if isinstance(r, dict)])
+                elif isinstance(parsed, dict):
+                    candidates.append(parsed)
 
         results: List[SearchResult] = []
         for raw in candidates[:50]:

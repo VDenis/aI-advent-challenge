@@ -214,3 +214,6 @@ __marimo__/
 
 # Reminder runtime data
 reminder/data/
+
+# Websearch runtime data
+websearch/output/

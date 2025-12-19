@@ -5,9 +5,8 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Docker CLI is required to прикрепляться к MCP контейнерам по stdio
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends docker.io ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./pyproject.toml

@@ -1,13 +1,11 @@
 [project]
-name = "gigachat-summary-mcp"
+name = "desktop-commander-http"
 version = "0.1.0"
-description = "MCP сервер summarize(text, style, max_chars) поверх GigaChat"
+description = "Minimal HTTP MCP server for filesystem ops"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115.0",
   "uvicorn>=0.30.0",
-  "httpx>=0.27.0",
-  "python-dotenv>=1.0.1",
 ]
 
 [build-system]

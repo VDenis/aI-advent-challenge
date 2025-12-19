@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from typing import List
+from typing import Iterable, List
 
 from dotenv import load_dotenv
 from textual import on
@@ -19,16 +19,45 @@ from .clients.gigachat_summary import GigaChatSummaryClient
 from .clients.types import SearchResult
 
 
-def _command_from_env(var_name: str, default: List[str]) -> List[str]:
-    raw = os.getenv(var_name)
-    if raw:
-        return raw.strip().split()
-    return default
+def _dedup(seq: Iterable[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for item in seq:
+        if not item:
+            continue
+        if item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
 
 
-def _attach_command(container_var: str, fallback_name: str) -> List[str]:
-    container = os.getenv(container_var, fallback_name)
-    return ["docker", "attach", container]
+def _build_urls(env_value: str | None, service_host: str, service_port: int, host_port: int) -> List[str]:
+    def _ensure_mcp_path(url: str) -> str:
+        url = url.strip()
+        if not url:
+            return ""
+        if url.rstrip("/").endswith("/mcp"):
+            return url.rstrip("/")
+        return url.rstrip("/") + "/mcp"
+
+    manual = [_ensure_mcp_path(part) for part in (env_value or "").split(",") if part.strip()]
+    defaults = [
+        _ensure_mcp_path(f"http://localhost:{host_port}"),  # порт проброшен наружу compose
+        _ensure_mcp_path(f"http://{service_host}:{service_port}"),  # имя сервиса внутри docker‑сети
+        _ensure_mcp_path(f"http://host.docker.internal:{host_port}"),  # доступ к проброшенному порту из контейнера
+    ]
+    return _dedup([u for u in manual if u] + defaults)
+
+
+def _normalize_workspace_path(path: str) -> str:
+    """
+    Map legacy `/mnt/workspace` to `/workspace` to match desktop-commander root.
+    Keeps other paths intact.
+    """
+    legacy_prefix = "/mnt/workspace"
+    if path.startswith(legacy_prefix):
+        return path.replace(legacy_prefix, "/workspace", 1)
+    return path
 
 
 class WebSearchApp(App):
@@ -68,16 +97,20 @@ class WebSearchApp(App):
         super().__init__()
         load_dotenv()
 
-        project_root = os.getenv("PROJECT_ROOT", "/mnt/workspace")
-        self.output_dir = os.getenv("OUTPUT_DIR", f"{project_root}/output")
+        project_root = _normalize_workspace_path(os.getenv("PROJECT_ROOT", "/workspace"))
+        self.output_dir = _normalize_workspace_path(os.getenv("OUTPUT_DIR", f"{project_root}/output"))
 
-        brave_cmd = _command_from_env("MCP_BRAVE_CMD", _attach_command("MCP_BRAVE_CONTAINER", "websearch-brave"))
-        desktop_cmd = _command_from_env("MCP_DESKTOP_CMD", _attach_command("MCP_DESKTOP_CONTAINER", "websearch-desktop"))
-        summary_cmd = _command_from_env("MCP_SUMMARY_CMD", _attach_command("MCP_SUMMARY_CONTAINER", "websearch-gigachat-summary"))
+        brave_urls = _build_urls(os.getenv("MCP_BRAVE_URL"), "brave-search", 3000, 3001)
+        desktop_urls = _build_urls(os.getenv("MCP_DESKTOP_URL"), "desktop-commander", 3000, 3002)
+        summary_urls = _build_urls(os.getenv("MCP_SUMMARY_URL"), "gigachat-summary", 3000, 3003)
 
-        self.brave = BraveClient(brave_cmd)
-        self.desktop = DesktopCommanderClient(desktop_cmd)
-        self.summarizer = GigaChatSummaryClient(summary_cmd)
+        self._log_endpoints("Brave", brave_urls)
+        self._log_endpoints("Desktop Commander", desktop_urls)
+        self._log_endpoints("Summary", summary_urls)
+
+        self.brave = BraveClient(brave_urls)
+        self.desktop = DesktopCommanderClient(desktop_urls)
+        self.summarizer = GigaChatSummaryClient(summary_urls)
 
         self.results: List[SearchResult] = []
         self.last_query: str = ""
@@ -195,6 +228,11 @@ class WebSearchApp(App):
     def _set_status(self, status: str, error: str | None) -> None:
         self.query_one("#status", Static).update(status)
         self.query_one("#error", Static).update(error or "")
+
+    @staticmethod
+    def _log_endpoints(name: str, urls: list[str]) -> None:
+        # Печатаем явный список эндпоинтов для диагностики сетевых проблем
+        print(f"[MCP] {name} endpoints: {', '.join(urls)}")
 
     async def on_unmount(self) -> None:
         await asyncio.gather(
