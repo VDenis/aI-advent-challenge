@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  brave-search:
+    image: mcp/brave-search:latest
+    container_name: websearch-brave
+    env_file: .env
+    environment:
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+    stdin_open: true
+    tty: false
+
+  desktop-commander:
+    image: mcp/desktop-commander:latest
+    container_name: websearch-desktop
+    stdin_open: true
+    tty: false
+    volumes:
+      - ./:/mnt/workspace
+
+  gigachat-summary:
+    build:
+      context: ./mcp/gigachat-summary
+    container_name: websearch-gigachat-summary
+    env_file: .env
+    stdin_open: true
+    tty: false
+
+  tui:
+    build:
+      context: ./tui
+    container_name: websearch-tui
+    env_file: .env
+    depends_on:
+      - brave-search
+      - desktop-commander
+      - gigachat-summary
+    environment:
+      - PROJECT_ROOT=${PROJECT_ROOT:-/mnt/workspace}
+      - OUTPUT_DIR=${OUTPUT_DIR:-/mnt/workspace/output}
+      - MCP_BRAVE_CONTAINER=${MCP_BRAVE_CONTAINER:-websearch-brave}
+      - MCP_DESKTOP_CONTAINER=${MCP_DESKTOP_CONTAINER:-websearch-desktop}
+      - MCP_SUMMARY_CONTAINER=${MCP_SUMMARY_CONTAINER:-websearch-gigachat-summary}
+    volumes:
+      - ./:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /workspace
+    command: ["python", "-m", "websearch_tui.app"]
+    stdin_open: true
+    tty: true

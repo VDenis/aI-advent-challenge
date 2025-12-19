@@ -1,0 +1,43 @@
+{
+  "mcpServers": {
+    "brave-search": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "BRAVE_API_KEY=${BRAVE_API_KEY}",
+        "mcp/brave-search:latest"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "${BRAVE_API_KEY}"
+      }
+    },
+    "desktop-commander": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "./websearch:/mnt/workspace",
+        "mcp/desktop-commander:latest"
+      ]
+    },
+    "gigachat-summary": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--env-file",
+        "./websearch/.env",
+        "websearch-gigachat-summary:latest"
+      ]
+    }
+  }
+}
