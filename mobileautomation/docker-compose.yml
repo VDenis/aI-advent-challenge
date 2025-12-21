@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  android-emulator:
+    # ARM-friendly emulator image; if it fails on your host, swap to another ARM tag.
+    image: tracer0tong/android-emulator:latest
+    container_name: android-emulator
+    privileged: true
+    environment:
+      - DEVICE=Samsung Galaxy S10
+      - EMULATOR_PARAMS=-no-window -gpu swiftshader_indirect -no-snapshot -noaudio
+      - AUTO_START=1
+    ports:
+      - "5554:5554" # Emulator console
+      - "5555:5555" # ADB
+      - "6080:6080" # Optional: noVNC UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6080"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+
