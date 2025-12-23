@@ -217,3 +217,8 @@ reminder/data/
 
 # Websearch runtime data
 websearch/output/
+# RAG Search runtime data
+rag_search/corpus/
+rag_search/store/
+rag_search/test_corpus/
+rag_search/test_store/

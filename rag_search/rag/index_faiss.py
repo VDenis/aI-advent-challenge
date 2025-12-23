@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 from rag.chunking import chunk_text
-from rag.ollama_embed import embed_texts
+from rag.ollama_client import embed_texts
 
 
 SUPPORTED_EXTENSIONS = {".md", ".txt", ".py"}

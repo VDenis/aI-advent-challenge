@@ -77,6 +77,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Сколько результатов вернуть (по умолчанию 5)",
     )
 
+    ask_parser = subparsers.add_parser("ask", help="Задать вопрос агенту")
+    _add_shared_args(ask_parser)
+    ask_parser.add_argument("query", help="Текст вопроса")
+    ask_parser.add_argument(
+        "--gen-model",
+        default="llama3",
+        help="Модель генерации (по умолчанию llama3)",
+    )
+    ask_parser.add_argument(
+        "--mode",
+        choices=["rag", "no-rag", "compare"],
+        default="compare",
+        help="Режим работы: rag, no-rag, compare (по умолчанию compare)",
+    )
+
+    yt_parser = subparsers.add_parser("youtube", help="Скачать субтитры с YouTube")
+    yt_parser.add_argument("url", help="Ссылка на видео YouTube или ID")
+    yt_parser.add_argument(
+        "--lang",
+        default="ru,en",
+        help="Приоритет языков через запятую (по умолчанию ru,en)",
+    )
+    yt_parser.add_argument(
+        "--output",
+        default="./corpus/youtube",
+        help="Куда сохранить файл (по умолчанию ./corpus/youtube)",
+    )
+
     return parser
 
 
@@ -107,6 +135,47 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "search":
         results = search_store(store_path=args.store, query=args.query, model=args.model, k=args.k)
         _print_results(results)
+    
+    elif args.command == "ask":
+        from rag.agent import Agent
+        agent = Agent(args.store, embed_model=args.model, gen_model=args.gen_model)
+        
+        print(f"--- Mode: {args.mode} ---")
+        if args.mode == "rag":
+            ans, chunks = agent.answer_with_rag(args.query)
+            print(f"\n[RAG Answer]\n{ans}")
+            if args.verbose > 0:
+                print("\n[Chunks used]")
+                for i, c in enumerate(chunks, 1):
+                    print(f"{i}. {c[:100]}...")
+        
+        elif args.mode == "no-rag":
+            ans = agent.answer_no_rag(args.query)
+            print(f"\n[No-RAG Answer]\n{ans}")
+            
+        elif args.mode == "compare":
+            res = agent.compare(args.query)
+            print(f"\n=> Question: {res.question}")
+            print(f"\n[RAG Answer]\n{res.rag_answer}")
+            print(f"\n[No-RAG Answer]\n{res.no_rag_answer}")
+            print(f"\n[Judge's Conclusion]\n{res.conclusion}")
+
+    elif args.command == "youtube":
+        from rag.youtube import extract_video_id, get_transcript, save_transcript
+        
+        video_id = extract_video_id(args.url)
+        if not video_id:
+            logging.error("Некорректный URL видео: %s", args.url)
+            return
+
+        try:
+            langs = args.lang.split(",")
+            text = get_transcript(video_id, languages=langs)
+            path = save_transcript(video_id, text, output_dir=args.output)
+            print(f"Субтитры сохранены в: {path}")
+            print(f"Теперь запустите `ingest`, чтобы добавить этот файл в индекс.")
+        except Exception as exc:
+            logging.error("Ошибка при скачивании субтитров: %s", exc)
 
 
 if __name__ == "__main__":
