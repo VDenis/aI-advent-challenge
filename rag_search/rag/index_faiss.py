@@ -147,7 +147,7 @@ def _load_meta(meta_path: str) -> List[ChunkRecord]:
 
 
 def search_store(
-    store_path: str, query: str, model: str, k: int = 5
+    store_path: str, query: str, model: str, k: int = 5, threshold: float | None = None
 ) -> List[Tuple[float, ChunkRecord]]:
     store_path = os.path.abspath(store_path)
     index_path = os.path.join(store_path, "index.faiss")
@@ -174,7 +174,12 @@ def search_store(
     for score, idx in zip(scores[0], ids[0]):
         if idx == -1 or idx >= len(records):
             continue
-        results.append((float(score), records[idx]))
+        
+        f_score = float(score)
+        if threshold is not None and f_score < threshold:
+            continue
+            
+        results.append((f_score, records[idx]))
     return results
 
 

@@ -5,7 +5,42 @@ from typing import Any, Iterable, List, Sequence, Dict
 
 import requests
 
+import subprocess
+import time
+
 OLLAMA_BASE_URL = "http://localhost:11434/api"
+
+def is_ollama_running() -> bool:
+    """Check if the Ollama service is reachable."""
+    try:
+        response = requests.get(f"{OLLAMA_BASE_URL.rsplit('/', 1)[0]}", timeout=2)
+        return response.status_code == 200 or "Ollama is running" in response.text
+    except requests.RequestException:
+        return False
+
+def start_ollama_service() -> bool:
+    """Attempt to start the Ollama service on macOS."""
+    logging.info("Attempting to start Ollama service...")
+    try:
+        # On Mac, 'open -a Ollama' is the most reliable way to start the app
+        subprocess.run(["open", "-a", "Ollama"], check=True)
+        # Wait a few seconds for it to start
+        for _ in range(5):
+            if is_ollama_running():
+                return True
+            time.sleep(2)
+        return is_ollama_running()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        # Fallback to 'ollama serve' in background if possible
+        try:
+            subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for _ in range(5):
+                if is_ollama_running():
+                    return True
+                time.sleep(2)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+    return False
 
 def _post_ollama(endpoint: str, payload: Dict[str, Any], timeout: int) -> Any:
     url = f"{OLLAMA_BASE_URL}/{endpoint}"
@@ -13,7 +48,8 @@ def _post_ollama(endpoint: str, payload: Dict[str, Any], timeout: int) -> Any:
         response = requests.post(url, json=payload, timeout=timeout)
     except requests.exceptions.ConnectionError as exc:
         raise RuntimeError(
-            f"Ollama недоступна по адресу {url}. Запустите `ollama serve` и проверьте порт 11434."
+            f"Ollama недоступна по адресу {url}. \n"
+            "Попробуйте запустить сервис: `rag ensure-ollama` или `ollama serve`."
         ) from exc
     except requests.RequestException as exc:
         raise RuntimeError(f"Ошибка запроса к Ollama: {exc}") from exc

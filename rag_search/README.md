@@ -1,28 +1,55 @@
 # local-rag-indexer
 
-Локальный RAG на базе FAISS + Ollama embeddings.
+Локальный RAG на базе FAISS + Ollama (embeddings & generation).
 
-## Виртуальное окружение (рекомендуется)
+## Быстрый старт
+
+### 1. Подготовка окружения
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # или .venv\Scripts\activate в Windows
+# На Mac/Linux:
+source .venv/bin/activate
+# На Windows:
+.venv\Scripts\activate
+
 pip install -e .
 ```
 
-## Предварительно
-- Установите зависимости: `pip install .` или `pip install -r <(python -m pip freeze)` после активации окружения.
-- Запустите Ollama: `ollama serve` (порт 11434 по умолчанию).
-- Подтяните модель эмбеддингов: `ollama pull mxbai-embed-large`.
+### 2. Запуск сервиса Ollama
+Теперь сервис можно запустить прямо из проекта:
+```bash
+python -m rag ensure-ollama
+```
+*Для работы эмбеддингов по умолчанию требуется модель `mxbai-embed-large`. Подтяните её вручную, если она отсутствует: `ollama pull mxbai-embed-large`.*
 
 ## Команды
-- Инжест корпуса:  
-  `python -m rag ingest --corpus ./corpus --store ./store --model mxbai-embed-large`
 
-- Поиск:  
-  `python -m rag search "your query text" --k 5 --store ./store --model mxbai-embed-large`
+### Инжест корпуса
+Чтение файлов (`.md`, `.txt`, `.py`) и создание векторного индекса.
+```bash
+python -m rag ingest --corpus ./corpus --store ./store
+```
 
-## Примечания
-- Корпус: файлы `.md`, `.txt`, `.py` читаются как plain text (UTF-8; при ошибке файл пропускается с предупреждением).
-- При новом ingest каталог `store` перезаписывается полностью.
-- Индекс: FAISS `IndexFlatIP` с L2-нормировкой векторов; метаданные в `store/meta.jsonl`.
+### Поиск (Векторный)
+Простой поиск похожих чанков по базе.
+```bash
+python -m rag search "ваш запрос" --threshold 0.5 --k 3
+```
+*   `--threshold`: Минимум схожести (0.0 - 1.0). Позволяет отсечь шум.
+*   `--k`: Количество возвращаемых результатов.
+
+### Вопрос агенту (RAG)
+Генерация ответа с использованием извлеченного контекста.
+```bash
+python -m rag ask "Ваш вопрос" --mode rag --rerank --threshold 0.4 -v
+```
+*   `--mode`: `rag` (только RAG), `no-rag` (только LLM), `compare` (сравнение результатов судьей).
+*   `--rerank`: **Использовать LLM-реранкер**. Модель проверит каждый чанк на реальную релевантность вопросу перед генерацией.
+*   `--threshold`: Предварительная фильтрация по вектору.
+*   `-v`: Показать извлеченные чанки.
+
+## Технические детали
+*   **Индекс:** FAISS `IndexFlatIP` с L2-нормировкой.
+*   **Реранкер:** Встроенный в `Agent` алгоритм фильтрации на базе LLM (второй этап после векторного поиска).
+*   **Чанкинг:** Фиксированный размер с перекрытием (конфигурируется в `ingest`).
 

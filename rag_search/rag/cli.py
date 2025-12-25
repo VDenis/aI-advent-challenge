@@ -77,6 +77,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Сколько результатов вернуть (по умолчанию 5)",
     )
 
+    search_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Минимальный порог схожести (0.0 - 1.0, по умолчанию без фильтра)",
+    )
+
     ask_parser = subparsers.add_parser("ask", help="Задать вопрос агенту")
     _add_shared_args(ask_parser)
     ask_parser.add_argument("query", help="Текст вопроса")
@@ -91,6 +98,17 @@ def build_parser() -> argparse.ArgumentParser:
         default="compare",
         help="Режим работы: rag, no-rag, compare (по умолчанию compare)",
     )
+    ask_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Минимальный порог схожести (по умолчанию без фильтра)",
+    )
+    ask_parser.add_argument(
+        "--rerank",
+        action="store_true",
+        help="Использовать LLM-реранкер для уточнения результатов",
+    )
 
     yt_parser = subparsers.add_parser("youtube", help="Скачать субтитры с YouTube")
     yt_parser.add_argument("url", help="Ссылка на видео YouTube или ID")
@@ -104,6 +122,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="./corpus/youtube",
         help="Куда сохранить файл (по умолчанию ./corpus/youtube)",
     )
+
+    subparsers.add_parser("ensure-ollama", help="Проверить и запустить сервис Ollama")
 
     return parser
 
@@ -133,28 +153,35 @@ def main(argv: list[str] | None = None) -> None:
             batch_size=args.batch_size,
         )
     elif args.command == "search":
-        results = search_store(store_path=args.store, query=args.query, model=args.model, k=args.k)
+        results = search_store(
+            store_path=args.store, 
+            query=args.query, 
+            model=args.model, 
+            k=args.k,
+            threshold=args.threshold
+        )
         _print_results(results)
     
     elif args.command == "ask":
         from rag.agent import Agent
         agent = Agent(args.store, embed_model=args.model, gen_model=args.gen_model)
         
-        print(f"--- Mode: {args.mode} ---")
+        print(f"--- Mode: {args.mode} | Threshold: {args.threshold} | Rerank: {args.rerank} ---")
         if args.mode == "rag":
-            ans, chunks = agent.answer_with_rag(args.query)
+            ans, chunks = agent.answer_with_rag(args.query, threshold=args.threshold, rerank=args.rerank)
             print(f"\n[RAG Answer]\n{ans}")
             if args.verbose > 0:
                 print("\n[Chunks used]")
                 for i, c in enumerate(chunks, 1):
-                    print(f"{i}. {c[:100]}...")
+                    snippet = c.replace("\n", " ")[:200]
+                    print(f"{i}. {snippet}...")
         
         elif args.mode == "no-rag":
             ans = agent.answer_no_rag(args.query)
             print(f"\n[No-RAG Answer]\n{ans}")
             
         elif args.mode == "compare":
-            res = agent.compare(args.query)
+            res = agent.compare(args.query, threshold=args.threshold, rerank=args.rerank)
             print(f"\n=> Question: {res.question}")
             print(f"\n[RAG Answer]\n{res.rag_answer}")
             print(f"\n[No-RAG Answer]\n{res.no_rag_answer}")
@@ -177,6 +204,18 @@ def main(argv: list[str] | None = None) -> None:
         except Exception as exc:
             logging.error("Ошибка при скачивании субтитров: %s", exc)
 
+    elif args.command == "ensure-ollama":
+        from rag.ollama_client import is_ollama_running, start_ollama_service
+        
+        if is_ollama_running():
+            print("Ollama уже запущена.")
+        else:
+            print("Ollama не запущена. Пытаюсь запустить...")
+            if start_ollama_service():
+                print("Ollama успешно запущена!")
+            else:
+                print("Не удалось запустить Ollama автоматически.")
+                print("Пожалуйста, запустите приложение Ollama или выполните `ollama serve` вручную.")
 
 if __name__ == "__main__":
     main()
