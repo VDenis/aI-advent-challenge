@@ -19,3 +19,5 @@ COPY data /app/data
  EXPOSE 8000
 
  CMD ["poetry", "run", "python", "-m", "mcp_scheduler_server.app"]
+
+

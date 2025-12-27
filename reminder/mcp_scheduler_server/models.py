@@ -47,3 +47,5 @@ class MessageRequest(BaseModel):
 class MessageResponse(BaseModel):
     type: Literal["result", "error"]
     content: Any
+
+

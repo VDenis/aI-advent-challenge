@@ -30,3 +30,5 @@
 - `console_agent/` — Textual TUI, подключение к MCP по SSE, резюме через GigaChat (или детерминированный fallback).
 - `docker-compose.yml` — сервисы `mcp` и `console`, общий `.env`.
 - `Makefile` — `make up`, `make run-client`, `make down`.
+
+

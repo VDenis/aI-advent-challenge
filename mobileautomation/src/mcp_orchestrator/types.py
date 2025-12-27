@@ -26,3 +26,5 @@ class CommandResult:
         return " | ".join(parts)
 
 
+
+

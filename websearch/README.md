@@ -43,3 +43,5 @@ Content-Type: application/json
 
 ## Почему `cursor.json`
 Файл `websearch/cursor.json` добавляет три MCP сервера для Cursor через stdio (`docker run -i`). Пути/имена совпадают с docker‑compose и можно править при необходимости.
+
+

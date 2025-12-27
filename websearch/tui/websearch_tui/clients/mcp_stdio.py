@@ -159,3 +159,5 @@ class MCPStdioClient:
             self._stderr_task.cancel()
             with contextlib.suppress(Exception):
                 await self._stderr_task
+
+

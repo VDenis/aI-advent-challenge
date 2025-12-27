@@ -160,3 +160,5 @@ async def rpc_root(payload: Dict[str, Any]) -> JSONResponse:
 @app.get("/ping")
 async def ping() -> Dict[str, str]:
     return {"message": "pong", "root": str(ROOT_DIR)}
+
+

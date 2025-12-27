@@ -16,3 +16,5 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -e .
 
 CMD ["python", "-m", "websearch_tui.app"]
+
+

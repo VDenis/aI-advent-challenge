@@ -52,3 +52,5 @@ services:
     command: ["python", "-m", "websearch_tui.app"]
     stdin_open: true
     tty: true
+
+

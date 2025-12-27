@@ -15,3 +15,5 @@
  COPY console_agent /app/console_agent
 
  CMD ["poetry", "run", "python", "-m", "console_agent.app"]
+
+

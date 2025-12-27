@@ -6,3 +6,5 @@ run-client:
 
 down:
 	docker compose down -v
+
+

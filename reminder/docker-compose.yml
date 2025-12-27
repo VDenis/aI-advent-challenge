@@ -30,3 +30,5 @@ services:
       MCP_MESSAGES_URL: ${MCP_MESSAGES_URL:-http://mcp:8000/messages}
       MCP_SSE_URL: ${MCP_SSE_URL:-http://mcp:8000/sse}
     command: ["poetry", "run", "python", "-m", "console_agent.app"]
+
+
