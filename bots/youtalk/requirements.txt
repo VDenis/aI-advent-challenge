@@ -1,0 +1,14 @@
+langchain==0.2.16
+langchain-core>=0.2.0,<0.3.0
+langchain-community==0.2.16
+langchain-huggingface
+langchain-openai
+sentence-transformers
+faiss-cpu
+python-dotenv
+huggingface_hub<0.25.0
+youtube-transcript-api
+pytube
+yt-dlp
+streamlit
+pydantic>=1.10.0,<2.0.0
