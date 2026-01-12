@@ -39,7 +39,8 @@ PRICE_OUTPUT_PER_1K = 0.0
 DEFAULT_SYSTEM_PROMPT: Optional[str] = None
 
 # Session memory defaults.
-DEFAULT_MEMORY_FILE = Path(__file__).resolve().parent / ".chat_memory.json"
+# Keep the default in repo root for easier discovery across CLI tools.
+DEFAULT_MEMORY_FILE = Path(__file__).resolve().parents[1] / ".chat_memory.json"
 DEFAULT_SESSION_LIST_LIMIT = 5
 
 

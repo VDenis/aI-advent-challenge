@@ -2,7 +2,13 @@
 
 import argparse
 import asyncio
+import sys
+from pathlib import Path
 from typing import Callable
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from bots.hf_demo.bot import create_bot as create_hf_demo_bot
 from bots.literary.bot import create_bot as create_literary_bot

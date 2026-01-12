@@ -1,6 +1,6 @@
-# gigachat-mcp-weather
+# gigachat-mcp-weather (монорепо демо‑проектов)
 
-Демо-проект: MCP stdio сервер погоды (Open-Meteo, без API key) и LangChain‑агент на GigaChat, который сам вызывает MCP tools через `langchain-mcp-adapters`.
+Демо‑проект: MCP stdio сервер погоды (Open‑Meteo, без API key) и LangChain‑агент на GigaChat, который сам вызывает MCP tools через `langchain-mcp-adapters`. В репозитории также есть дополнительные CLI и Telegram‑боты.
 
 ## Требования
 
@@ -61,6 +61,21 @@ gigachat-weather-agent "Какая сейчас температура и вет
 - `env.example`: шаблон переменных окружения GigaChat.
 - `pyproject.toml`: зависимости `fastmcp`, `mcp`, `httpx`, `langchain`, `langchain-community`, `langchain-mcp-adapters`, `python-dotenv`.
 - Если tool-calling не срабатывает: убедись, что MCP сервер запущен в отдельном процессе и `.env` с GigaChat данными загружен (перезапусти CLI после изменения env).
+
+## Дополнительные CLI
+
+Зависимости:
+- CLI: `pip install -r cli/requirements.txt`
+- Telegram‑боты: `pip install -r bots/requirements.txt`
+
+Переменные окружения (см. `env.example`):
+- Для CLI чатов: `GIGA_CLIENT_BASIC`, `GIGA_API_BASE_URL`, `GIGA_MODEL_NAME`
+- Для HF инструментов/ботов: `HF_TOKEN`, `HF_BOT_TOKEN`
+
+Запуск:
+- Простой консольный чат с GigaChat: `python -m cli.console_chat`
+- Консольный чат с памятью сессий: `python -m cli.history_chat.console_chat`
+- Запуск Telegram ботов: `python bots/main.py --bot real_estate` (или `literary`, `hf_demo`)
 
 ## Пример вывода CLI
 

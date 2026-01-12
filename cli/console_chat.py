@@ -1,7 +1,7 @@
 """Console chat client for GigaChat.
 
 Run:
-    python -m console_chat
+    python -m cli.console_chat
 
 Required in `.env`:
 - GIGA_CLIENT_BASIC=base64(client_id:client_secret)
@@ -12,10 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Iterable, List, Literal, Optional, Tuple
 
-from config import Settings, load_settings
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from cli.config import Settings, load_settings
 from services.gigachat_client import GigaChatClient, GigaChatClientConfig
 from services.token_counter import count_message_tokens, count_tokens
 

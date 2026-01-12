@@ -1,7 +1,7 @@
 """Console chat client for GigaChat.
 
 Run:
-    python "cli/history chat/console_chat.py"
+    python -m cli.history_chat.console_chat
 
 Required in `.env`:
 - GIGA_CLIENT_BASIC=base64(client_id:client_secret)
@@ -23,10 +23,10 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from config import Settings, load_settings
+from cli.history_chat.config import Settings, load_settings
 from services.gigachat_client import GigaChatClient, GigaChatClientConfig
 from services.token_counter import count_message_tokens, count_tokens
-from memory import (
+from cli.history_chat.memory import (
     MemoryStore,
     SessionRecord,
     iso_now,
