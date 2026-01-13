@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Developer Assistant UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="glow" aria-hidden="true"></div>
+    <header class="hero">
+      <div>
+        <p class="eyebrow">MCP + Local Models</p>
+        <h1>Developer Assistant</h1>
+        <p class="subhead">A focused control room for your project tools and models.</p>
+      </div>
+      <div class="status">
+        <span class="dot"></span>
+        <span>Connected</span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel chat-panel">
+        <div class="panel-header">
+          <h2>Dialogue</h2>
+          <button id="clearChat" class="ghost">Clear</button>
+        </div>
+        <div id="chatLog" class="chat-log" aria-live="polite"></div>
+        <form id="chatForm" class="chat-form">
+          <textarea id="chatInput" rows="3" placeholder="Ask about the repo or call a tool..." required></textarea>
+          <button type="submit">Send</button>
+        </form>
+      </section>
+
+      <section class="panel control-panel">
+        <div class="panel-header">
+          <h2>Model Control</h2>
+        </div>
+        <div class="field">
+          <label for="provider">Provider</label>
+          <select id="provider">
+            <option value="ollama">Ollama (OpenAI API)</option>
+            <option value="huggingface">Hugging Face</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="model">Model <span id="modelCount" class="model-count"></span></label>
+          <div class="inline-field">
+            <select id="model" class="model-select">
+              <option value="">Loading models...</option>
+            </select>
+            <button id="loadModels" class="ghost" type="button" title="Refresh models list">⟳</button>
+          </div>
+        </div>
+        <div class="field" data-provider="ollama">
+          <label for="baseUrl">Ollama Base URL</label>
+          <input id="baseUrl" type="text" placeholder="http://localhost:11434/v1" />
+        </div>
+        <div class="field" data-provider="huggingface">
+          <label for="hfBaseUrl">Hugging Face Base URL</label>
+          <input id="hfBaseUrl" type="text" placeholder="https://router.huggingface.co/v1" />
+        </div>
+        <div class="field" data-provider="huggingface">
+          <label for="hfKey">Hugging Face API Key</label>
+          <div class="inline-field">
+            <input id="hfKey" type="password" placeholder="hf_..." />
+            <button id="overrideHfKey" class="ghost" type="button" style="display:none;" title="Override env API key">🔓</button>
+          </div>
+        </div>
+        <div class="field toggle">
+          <label for="useMcp">Enable MCP tool calling</label>
+          <input id="useMcp" type="checkbox" />
+        </div>
+        <p class="note">Tip: MCP tool calling is supported in both Ollama and Hugging Face (OpenAI-compatible API).</p>
+      </section>
+
+      <section class="panel tools-panel">
+        <div class="panel-header">
+          <h2>MCP Tools</h2>
+          <span id="mcpServerInfo" class="mcp-info"></span>
+        </div>
+        <div class="mcp-status">
+          <button id="refreshTools" class="ghost" title="Reload tools from MCP server">
+            ↻ Reload Tools
+          </button>
+        </div>
+        <div id="toolList" class="tool-list"></div>
+
+        <div class="tool-call">
+          <h3>Manual Tool Testing</h3>
+          <p class="note">Test tools directly without using chat (advanced)</p>
+          <label for="toolName">Tool name:</label>
+          <select id="toolName">
+            <option value="">Select a tool...</option>
+          </select>
+          <label for="toolArgs">Arguments (JSON):</label>
+          <textarea id="toolArgs" rows="3" placeholder='{"key": "value"}'></textarea>
+          <div class="button-group">
+            <button id="callTool">Execute</button>
+            <button id="clearToolResult" class="ghost">Clear</button>
+          </div>
+          <pre id="toolResult" class="tool-result"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

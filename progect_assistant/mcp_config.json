@@ -1,0 +1,16 @@
+{
+  "assistant": {
+    "command": "python -m progect_assistant.mcp_server",
+    "env": {
+      "PROJECT_ROOT": "${PROJECT_ROOT}",
+      "PYTHONPATH": "${PROJECT_ROOT}"
+    }
+  },
+  "git": {
+    "command": "python progect_assistant/git_mcp_server.py",
+    "env": {
+      "GIT_MCP_PROJECT_ROOT": "${PROJECT_ROOT}",
+      "PYTHONPATH": "${PROJECT_ROOT}"
+    }
+  }
+}

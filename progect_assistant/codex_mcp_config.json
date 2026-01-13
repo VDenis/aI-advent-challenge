@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "developer-assistant": {
+      "command": "python",
+      "args": [
+        "-m",
+        "progect_assistant.mcp_server"
+      ],
+      "env": {
+        "PROJECT_ROOT": "/Users/denis/code/ai_challenge/aI-advent-challenge"
+      }
+    }
+  }
+}
