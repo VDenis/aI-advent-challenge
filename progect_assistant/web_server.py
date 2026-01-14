@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -13,6 +14,7 @@ import httpx
 from progect_assistant.assistant.llm import LLMError, openai_chat_completion
 from progect_assistant.assistant.mcp_client import MCPStdioClient, run_async
 from progect_assistant.assistant.mcp_config import load_mcp_config, resolve_mcp_entry
+from progect_assistant.assistant.rag import RagIndexer, RagSearch
 
 
 PROJECT_ROOT = os.environ.get("PROJECT_ROOT", os.getcwd())
@@ -24,6 +26,153 @@ DEFAULT_HF_BASE_URL = os.environ.get("HF_BASE_URL", "https://router.huggingface.
 DEFAULT_HF_MODEL = os.environ.get("HF_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct")
 DEFAULT_HOST = os.environ.get("ASSISTANT_WEB_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("ASSISTANT_WEB_PORT", "8088"))
+DEFAULT_RAG_CACHE_PATH = os.environ.get(
+    "ASSISTANT_CACHE_PATH",
+    str(Path("progect_assistant") / ".cache" / "rag_index.json"),
+)
+
+RAG_SYSTEM_PROMPT = (
+    "You must answer only using the information in CONTEXT. "
+    "If the answer is not in CONTEXT, say you couldn't find it in the provided context."
+)
+_RAG_LOCK = threading.Lock()
+_RAG_INDEXER = RagIndexer(PROJECT_ROOT, DEFAULT_RAG_CACHE_PATH)
+_RAG_INDEX = None
+_RAG_STATUS: Dict[str, Any] = {
+    "state": "idle",
+    "total_files": 0,
+    "processed_files": 0,
+    "current_file": "",
+    "chunks": 0,
+    "error": "",
+}
+_RAG_THREAD: Optional[threading.Thread] = None
+
+
+def _get_rag_index():
+    global _RAG_INDEX
+    with _RAG_LOCK:
+        if _RAG_INDEX is None:
+            _RAG_INDEX = _RAG_INDEXER.load_or_build()
+        return _RAG_INDEX
+
+
+def _get_rag_status() -> Dict[str, Any]:
+    with _RAG_LOCK:
+        return dict(_RAG_STATUS)
+
+
+def _set_rag_status(**updates: Any) -> None:
+    with _RAG_LOCK:
+        _RAG_STATUS.update(updates)
+
+
+def _rag_progress_update(payload: Dict[str, Any]) -> None:
+    event = payload.get("event")
+    if event == "start":
+        _set_rag_status(
+            state="running",
+            total_files=int(payload.get("total", 0)),
+            processed_files=0,
+            current_file="",
+            chunks=0,
+            error="",
+        )
+        return
+    if event == "file":
+        _set_rag_status(
+            processed_files=int(payload.get("index", 0)),
+            total_files=int(payload.get("total", 0)),
+            current_file=str(payload.get("path", "")),
+        )
+        return
+    if event == "done":
+        _set_rag_status(
+            state="done",
+            total_files=int(payload.get("total", 0)),
+            processed_files=int(payload.get("total", 0)),
+            chunks=int(payload.get("chunks", 0)),
+            current_file="",
+        )
+
+
+def _run_rag_indexing() -> None:
+    global _RAG_INDEX
+    try:
+        _set_rag_status(state="running", error="")
+        index = _RAG_INDEXER.build_index(progress_cb=_rag_progress_update, verbose=False)
+        with _RAG_LOCK:
+            _RAG_INDEX = index
+    except Exception as exc:
+        _set_rag_status(state="error", error=str(exc), current_file="")
+
+
+def _start_rag_indexing() -> Dict[str, Any]:
+    global _RAG_THREAD
+    with _RAG_LOCK:
+        if _RAG_THREAD and _RAG_THREAD.is_alive():
+            return dict(_RAG_STATUS)
+        _RAG_STATUS.update(
+            {
+                "state": "running",
+                "total_files": 0,
+                "processed_files": 0,
+                "current_file": "",
+                "chunks": 0,
+                "error": "",
+            }
+        )
+        _RAG_THREAD = threading.Thread(target=_run_rag_indexing, daemon=True)
+        _RAG_THREAD.start()
+        return dict(_RAG_STATUS)
+
+
+def _extract_last_user_message(messages: List[Dict[str, Any]]) -> str:
+    for message in reversed(messages):
+        if message.get("role") == "user":
+            return str(message.get("content", ""))
+    return ""
+
+
+def _build_rag_context(query: str, top_k: int) -> str:
+    if not query:
+        return ""
+    index = _get_rag_index()
+    searcher = RagSearch(index)
+    results = searcher.search(query, top_k=top_k)
+    if not results:
+        return ""
+    sections = []
+    for _score, chunk in results:
+        snippet = chunk.text.strip()
+        if not snippet:
+            continue
+        sections.append(f"[{chunk.path} | {chunk.section}]\n{snippet}")
+    return "\n\n".join(sections)
+
+
+def _inject_rag_context(messages: List[Dict[str, Any]], context: str) -> List[Dict[str, Any]]:
+    if not context:
+        return [{"role": "system", "content": RAG_SYSTEM_PROMPT}, *messages]
+
+    new_messages: List[Dict[str, Any]] = []
+    last_user_idx = None
+    for idx, message in enumerate(messages):
+        if message.get("role") == "user":
+            last_user_idx = idx
+
+    for idx, message in enumerate(messages):
+        if idx == last_user_idx:
+            content = str(message.get("content", ""))
+            new_content = f"{content}\n\nCONTEXT:\n{context}"
+            new_messages.append({**message, "content": new_content})
+        else:
+            new_messages.append(message)
+
+    if last_user_idx is None:
+        new_messages.append({"role": "user", "content": f"CONTEXT:\n{context}"})
+
+    return [{"role": "system", "content": RAG_SYSTEM_PROMPT}, *new_messages]
 
 
 def _mask_api_key(key: str) -> str:
@@ -254,6 +403,10 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if self.path == "/api/rag/status":
+            _json_response(self, HTTPStatus.OK, {"status": _get_rag_status()})
+            return
+
         if self.path.startswith("/api/ollama/models"):
             base_url = self._query_param("base_url") or DEFAULT_OLLAMA_BASE_URL
             models = _fetch_ollama_models(base_url)
@@ -284,6 +437,11 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self) -> None:
+        if self.path == "/api/rag/index":
+            status = _start_rag_indexing()
+            _json_response(self, HTTPStatus.OK, {"status": status})
+            return
+
         if self.path == "/api/mcp/call":
             payload = _read_json(self)
             name = payload.get("name", "")
@@ -307,6 +465,19 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "messages must be a list"})
                 return
             use_mcp = bool(payload.get("use_mcp"))
+            use_rag = bool(payload.get("use_rag"))
+            rag_top_k = int(payload.get("rag_top_k", 5))
+            is_gpt_oss = "gpt-oss" in str(model).lower()
+            rag_context = ""
+
+            if is_gpt_oss:
+                use_rag = True
+                use_mcp = False
+
+            if use_rag:
+                query = _extract_last_user_message(messages)
+                rag_context = _build_rag_context(query, rag_top_k)
+                messages = _inject_rag_context(messages, rag_context)
 
             try:
                 if provider == "ollama":
@@ -321,6 +492,7 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                             messages=messages,
                             mcp_tools=mcp_tools,
                         )
+                        response["rag_context"] = rag_context
                         _json_response(self, HTTPStatus.OK, response)
                         return
                     data = openai_chat_completion(
@@ -330,7 +502,11 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                         messages=messages,
                     )
                     message = _extract_openai_message(data)
-                    _json_response(self, HTTPStatus.OK, {"message": message})
+                    _json_response(
+                        self,
+                        HTTPStatus.OK,
+                        {"message": message, "rag_context": rag_context},
+                    )
                     return
 
                 if provider == "huggingface":
@@ -348,6 +524,7 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                             messages=messages,
                             mcp_tools=mcp_tools,
                         )
+                        response["rag_context"] = rag_context
                         _json_response(self, HTTPStatus.OK, response)
                         return
                     data = openai_chat_completion(
@@ -357,7 +534,11 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                         messages=messages,
                     )
                     message = _extract_openai_message(data)
-                    _json_response(self, HTTPStatus.OK, {"message": message})
+                    _json_response(
+                        self,
+                        HTTPStatus.OK,
+                        {"message": message, "rag_context": rag_context},
+                    )
                     return
 
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": f"Unknown provider: {provider}"})
