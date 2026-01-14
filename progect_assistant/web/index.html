@@ -27,6 +27,10 @@
           <button id="clearChat" class="ghost">Clear</button>
         </div>
         <div id="chatLog" class="chat-log" aria-live="polite"></div>
+        <details id="ragContextPanel" class="rag-context">
+          <summary>Last RAG context</summary>
+          <pre id="ragContextText">No RAG context used yet.</pre>
+        </details>
         <form id="chatForm" class="chat-form">
           <textarea id="chatInput" rows="3" placeholder="Ask about the repo or call a tool..." required></textarea>
           <button type="submit">Send</button>
@@ -73,6 +77,17 @@
           <input id="useMcp" type="checkbox" />
         </div>
         <p class="note">Tip: MCP tool calling is supported in both Ollama and Hugging Face (OpenAI-compatible API).</p>
+
+        <div class="rag-panel">
+          <div class="panel-header">
+            <h3>RAG Index</h3>
+            <button id="runIndex" class="ghost small" type="button">Reindex</button>
+          </div>
+          <div class="rag-progress">
+            <div id="ragProgressBar" class="rag-progress-bar"></div>
+          </div>
+          <div id="ragProgressText" class="rag-progress-text">Idle</div>
+        </div>
       </section>
 
       <section class="panel tools-panel">

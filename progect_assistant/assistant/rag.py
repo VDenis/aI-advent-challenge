@@ -4,10 +4,11 @@ import os
 import re
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
-WORD_RE = re.compile(r"[A-Za-z0-9_\-/]+")
+# Include Unicode word chars so Cyrillic and other alphabets are indexed/searched.
+WORD_RE = re.compile(r"[\w\-/]+", re.UNICODE)
 
 
 @dataclass
@@ -73,6 +74,12 @@ class RagIndexer:
 
     def discover_files(self) -> List[Path]:
         root = Path(self.project_root)
+        cache_path = Path(self.cache_path).resolve()
+        cache_dir = cache_path.parent
+        ignored_roots = [
+            Path("rag_search") / "test_corpus",
+            Path("websearch") / "output",
+        ]
         patterns = [
             "README.md",
             "docs/**/*.md",
@@ -80,6 +87,15 @@ class RagIndexer:
             "**/*.md",
             "**/*.rst",
             "**/*.txt",
+            "**/*.py",
+            "**/*.js",
+            "**/*.ts",
+            "**/*.jsx",
+            "**/*.tsx",
+            "**/*.css",
+            "**/*.html",
+            "**/*.sh",
+            "**/*.sql",
             "**/*.yaml",
             "**/*.yml",
             "**/*.json",
@@ -88,21 +104,59 @@ class RagIndexer:
             "**/*.cfg",
             "**/.editorconfig",
         ]
-        ignore_dirs = {".git", "venv", "node_modules", "__pycache__"}
+        ignore_dirs = {".git", "node_modules", "__pycache__", "site-packages"}
 
         files: List[Path] = []
         for pattern in patterns:
             for path in root.glob(pattern):
-                if any(part in ignore_dirs for part in path.parts):
+                resolved = path.resolve()
+                try:
+                    rel_path = resolved.relative_to(root)
+                except ValueError:
+                    rel_path = resolved
+                if any(rel_path.is_relative_to(ignored) for ignored in ignored_roots):
+                    continue
+                # Skip RAG cache itself and its directory to avoid re-indexing cache.
+                if resolved == cache_path or (cache_dir.name.startswith(".") and cache_dir in resolved.parents):
+                    continue
+                # Skip hidden directories/files (starting with .) and known ignored/virtualenv dirs.
+                if any(
+                    part in ignore_dirs
+                    or part.startswith(".")
+                    or part.startswith("venv")
+                    or part.startswith("env")
+                    or part == "dist"
+                    or part == "build"
+                    for part in path.parts
+                ):
                     continue
                 if path.is_file():
                     files.append(path)
         return sorted(set(files))
 
-    def build_index(self) -> RagIndex:
+    def build_index(
+        self,
+        progress_cb: Optional[Callable[[Dict[str, object]], None]] = None,
+        verbose: bool = True,
+    ) -> RagIndex:
         chunks: List[Chunk] = []
-        for path in self.discover_files():
+        files = self.discover_files()
+        total = len(files)
+        if verbose:
+            print(f"RAG indexing started: {total} files.")
+        if progress_cb:
+            progress_cb({"event": "start", "total": total})
+        for idx, path in enumerate(files, start=1):
+            rel_path = os.path.relpath(path, self.project_root)
+            if verbose:
+                print(f"[{idx}/{total}] {rel_path}")
+            if progress_cb:
+                progress_cb({"event": "file", "index": idx, "total": total, "path": rel_path})
             chunks.extend(self._chunk_file(path))
+        if verbose:
+            print(f"RAG indexing complete: {len(chunks)} chunks.")
+        if progress_cb:
+            progress_cb({"event": "done", "total": total, "chunks": len(chunks)})
         index = RagIndex(chunks=chunks)
         self._persist(index)
         return index

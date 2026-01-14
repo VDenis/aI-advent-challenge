@@ -20,10 +20,16 @@ const overrideHfKeyBtn = document.getElementById("overrideHfKey");
 const toolNameSelect = document.getElementById("toolName");
 const clearToolResultBtn = document.getElementById("clearToolResult");
 const mcpServerInfo = document.getElementById("mcpServerInfo");
+const runIndexBtn = document.getElementById("runIndex");
+const ragProgressBar = document.getElementById("ragProgressBar");
+const ragProgressText = document.getElementById("ragProgressText");
+const ragContextPanel = document.getElementById("ragContextPanel");
+const ragContextText = document.getElementById("ragContextText");
 
 let messages = [];
 let defaultConfig = {};
 let isHfKeyOverridden = false;
+let ragPollTimer = null;
 
 const showMessage = (role, content) => {
   const wrapper = document.createElement("div");
@@ -279,6 +285,68 @@ const useToolInForm = (tool) => {
   toolArgsInput.focus();
 };
 
+const renderRagStatus = (status) => {
+  if (!status) return;
+  const state = status.state || "idle";
+  const total = status.total_files || 0;
+  const processed = status.processed_files || 0;
+  const currentFile = status.current_file || "";
+  const chunks = status.chunks || 0;
+  const error = status.error || "";
+
+  const progress = total > 0 ? Math.min((processed / total) * 100, 100) : 0;
+  ragProgressBar.style.width = `${progress}%`;
+
+  if (state === "running") {
+    ragProgressText.textContent = `Indexing ${processed}/${total}${currentFile ? `: ${currentFile}` : ""}`;
+  } else if (state === "done") {
+    ragProgressText.textContent = `Complete: ${chunks} chunks from ${total} files.`;
+  } else if (state === "error") {
+    ragProgressText.textContent = `Error: ${error || "indexing failed"}`;
+  } else {
+    ragProgressText.textContent = "Idle";
+  }
+
+  runIndexBtn.disabled = state === "running";
+  runIndexBtn.textContent = state === "running" ? "Indexing..." : "Reindex";
+
+  if (state === "running") {
+    if (!ragPollTimer) {
+      ragPollTimer = setInterval(fetchRagStatus, 1000);
+    }
+  } else if (ragPollTimer) {
+    clearInterval(ragPollTimer);
+    ragPollTimer = null;
+  }
+};
+
+const fetchRagStatus = async () => {
+  const response = await fetch("/api/rag/status");
+  if (!response.ok) return;
+  const data = await response.json();
+  renderRagStatus(data.status);
+};
+
+const startRagIndex = async () => {
+  runIndexBtn.disabled = true;
+  ragProgressText.textContent = "Starting indexing...";
+  if (!ragPollTimer) {
+    ragPollTimer = setInterval(fetchRagStatus, 1000);
+  }
+  const response = await fetch("/api/rag/index", { method: "POST" });
+  if (!response.ok) {
+    ragProgressText.textContent = "Failed to start indexing.";
+    runIndexBtn.disabled = false;
+    if (ragPollTimer) {
+      clearInterval(ragPollTimer);
+      ragPollTimer = null;
+    }
+    return;
+  }
+  const data = await response.json();
+  renderRagStatus(data.status);
+};
+
 const updateProviderFields = async () => {
   const provider = providerSelect.value;
   document.querySelectorAll("[data-provider]").forEach((field) => {
@@ -335,6 +403,12 @@ chatForm.addEventListener("submit", async (event) => {
   messages.push({ role: "assistant", content: message });
   showMessage("assistant", message);
 
+  if (Object.prototype.hasOwnProperty.call(data, "rag_context")) {
+    const context = data.rag_context || "No RAG context used.";
+    ragContextText.textContent = context;
+    ragContextPanel.open = true;
+  }
+
   if (data.tool_results?.length) {
     const toolSummary = data.tool_results
       .map((item) => `${item.name}: ${JSON.stringify(item.result).slice(0, 200)}`)
@@ -385,6 +459,10 @@ clearToolResultBtn.addEventListener("click", () => {
   toolResult.textContent = "";
 });
 
+runIndexBtn.addEventListener("click", () => {
+  startRagIndex();
+});
+
 overrideHfKeyBtn.addEventListener("click", () => {
   isHfKeyOverridden = true;
   hfKeyInput.placeholder = "hf_... (temporary override)";
@@ -403,3 +481,4 @@ providerSelect.addEventListener("change", () => {
 fetchConfig();
 fetchTools();
 updateProviderFields();
+fetchRagStatus();

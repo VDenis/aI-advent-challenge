@@ -1,0 +1,39 @@
+[project]
+name = "ai-code-review"
+version = "0.1.0"
+description = "AI-powered code review system using GigaChat, RAG, and MCP"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "AI Code Review", email = "code-review@example.com" }]
+dependencies = [
+    "mcp>=1.0.0,<2.0.0",
+    "httpx>=0.27.2",
+    "aiohttp>=3.8.3",
+    "python-dotenv>=1.0.1",
+    "gigachat>=0.1.43",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.scripts]
+code-review = "code_review.main:main"
+build-rag-index = "code_review.build_index:main"
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["code_review*"]
+exclude = ["code_review.tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

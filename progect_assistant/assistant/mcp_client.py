@@ -16,12 +16,14 @@ class MCPStdioClient:
         env: Optional[Dict[str, str]] = None,
         startup_timeout: float = 15.0,
         response_timeout: float = 25.0,
+        stream_limit: int = 5_000_000,
     ) -> None:
         self.command = self._normalize_command(command)
         self.name = name
         self.env = env or {}
         self.startup_timeout = startup_timeout
         self.response_timeout = response_timeout
+        self.stream_limit = stream_limit
         self._proc: asyncio.subprocess.Process | None = None
         self._next_id = 1
         self._initialized = False
@@ -47,6 +49,8 @@ class MCPStdioClient:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=env,
+            # GitHub MCP can return large JSON lines with diffs; bump the limit to avoid LimitOverrunError
+            limit=self.stream_limit,
         )
         self._initialized = False
         await self._initialize()
