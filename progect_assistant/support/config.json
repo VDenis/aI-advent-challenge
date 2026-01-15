@@ -1,0 +1,9 @@
+{
+  "product_name": "project_assistant",
+  "version": "0.1.0",
+  "support_email": "support@project-assistant.dev",
+  "ticket_id_prefix": "TICKET",
+  "auto_index_support_docs": true,
+  "similarity_threshold": 0.3,
+  "max_similar_tickets": 5
+}

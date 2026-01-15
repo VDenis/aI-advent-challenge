@@ -5,8 +5,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any, Dict, List
 
-from .mcp_client import MCPStdioClient, run_async
-from .mcp_config import resolve_mcp_entry
+from .client import MCPStdioClient, run_async
+from .config import resolve_mcp_entry
 
 
 @dataclass

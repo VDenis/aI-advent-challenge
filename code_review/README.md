@@ -1,15 +1,33 @@
 # AI Code Review System
 
-Automatic code review system for GitHub Pull Requests using GigaChat LLM, RAG context, and MCP protocol.
+LLM-powered reviewer for GitHub PRs (GigaChat) with RAG context and MCP GitHub integration.
 
 ## Features
+- ✅ Automatic PR reviews with blocking/non-blocking split
+- 🧠 Context-aware via RAG cache
+- 🔄 MCP GitHub server for fetching/posting
+- 📝 Structured Markdown output with file/line citations
 
-- ✅ **Automatic PR Review**: Triggered on every pull request
-- 🧠 **AI-Powered**: Uses GigaChat for intelligent code analysis
-- 📚 **Context-Aware**: RAG system provides project-specific context
-- 🔄 **MCP Integration**: Uses Model Context Protocol for GitHub operations
-- 🚨 **Smart Issue Detection**: Separates blocking from non-blocking issues
-- 📝 **Structured Output**: Markdown reviews with clear sections
+## Quickstart (local)
+1. Install deps (isolated от монорепо):
+   ```bash
+   cd code_review
+   pip install -r requirements.txt  # или pip install -e .
+   npm install -g @modelcontextprotocol/server-github
+   ```
+2. Export env: `GITHUB_TOKEN`, `GIGACHAT_CREDENTIALS`, и либо `GITHUB_REPO`, либо `REPO_OWNER` + `REPO_NAME`. При необходимости укажи `PROJECT_ROOT` (по умолчанию `pwd`).
+3. Собери RAG индекс для кеша:
+   ```bash
+   PROJECT_ROOT=$(pwd)/.. python -m code_review.build_index
+   ```
+4. Прогон без публикации:
+   ```bash
+   python -m code_review.main --pr 123 --repo owner/repo --no-post
+   ```
+
+## CI usage
+- В GitHub Actions запускай `python -m code_review.github_action`.
+- Workflow в репозитории не включён: добавь свой `.github/workflows/ai-code-review.yml`, который ставит Python + Node, устанавливает зависимости выше и прокидывает `PR_NUMBER`, `GITHUB_TOKEN`, `GIGACHAT_CREDENTIALS`, `REPO_OWNER/REPO_NAME` (или `GITHUB_REPO`).
 
 ## Architecture
 
@@ -28,250 +46,69 @@ code_review/github_action.py (Orchestrator)
 | Module | Responsibility |
 |--------|----------------|
 | `models.py` | Data structures (PRData, ReviewResult, etc.) |
-| `config.py` | Configuration management from environment |
+| `config.py` | Environment-driven configuration |
 | `pr_fetcher.py` | Fetch PR data via MCP GitHub server |
 | `context_builder.py` | Build review context using RAG |
 | `reviewer.py` | Generate reviews using GigaChat |
 | `formatter.py` | Format reviews as Markdown |
 | `poster.py` | Post reviews to GitHub via MCP |
-| `github_action.py` | Main orchestrator for GitHub Actions |
-| `build_index.py` | Build RAG index for caching |
-| `main.py` | Local testing CLI |
-
-## Setup
-
-### 1. Prerequisites
-
-- Python 3.10+
-- Node.js 20+ (for MCP GitHub server)
-- GitHub repository access
-- GigaChat API credentials
-
-### 2. Install Dependencies
-
-**Option 1: Using requirements.txt (recommended)**
-```bash
-cd code_review
-pip install -r requirements.txt
-npm install -g @modelcontextprotocol/server-github
-```
-
-**Option 2: Using pyproject.toml**
-```bash
-cd code_review
-pip install -e .
-npm install -g @modelcontextprotocol/server-github
-```
-
-**Note:** Code review has isolated dependencies and doesn't conflict with other projects in the monorepo.
-
-### 3. Configure GitHub Secrets
-
-Add these secrets to your repository:
-
-- `GITHUB_TOKEN`: Automatically provided by Actions
-- `GIGACHAT_CREDENTIALS`: Base64 encoded `client_id:client_secret`
-
-### 4. Enable Workflow
-
-The workflow is automatically enabled when you commit `.github/workflows/ai-code-review.yml`.
-
-## Local Testing
-
-### Build RAG Index
-
-```bash
-export PROJECT_ROOT=$(pwd)
-python -m code_review.build_index
-```
-
-### Test Against Real PR
-
-```bash
-export GITHUB_TOKEN="ghp_your_token"
-export GIGACHAT_CREDENTIALS="base64_encoded_credentials"
-
-python -m code_review.main --pr 123 --repo owner/repo
-```
-
-Use `--no-post` flag to preview review without posting:
-
-```bash
-python -m code_review.main --pr 123 --repo owner/repo --no-post
-```
+| `github_action.py` | Actions entrypoint |
+| `build_index.py` | Build RAG index |
+| `main.py` | Local CLI |
 
 ## Configuration
-
-Environment variables (set in GitHub Actions or locally):
 
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `GITHUB_TOKEN` | GitHub API token | ✅ |
-| `GIGACHAT_CREDENTIALS` | GigaChat API credentials (Base64) | ✅ |
-| `PR_NUMBER` | Pull request number | ✅ (Actions) |
-| `REPO_OWNER` | Repository owner | ✅ (Actions) |
-| `REPO_NAME` | Repository name | ✅ (Actions) |
-| `GITHUB_REPO` | Full repo path (owner/repo) | ✅ (Local) |
-| `PROJECT_ROOT` | Project root directory | Optional |
+| `GIGACHAT_CREDENTIALS` | Base64 `client_id:client_secret` | ✅ |
+| `PR_NUMBER` | Pull request number | ✅ в Actions |
+| `REPO_OWNER` / `REPO_NAME` | Repo owner/name | ✅ в Actions (если нет `GITHUB_REPO`) |
+| `GITHUB_REPO` | `owner/repo` shorthand | ✅ локально |
+| `PROJECT_ROOT` | Project root for RAG cache | Опционально (`os.getcwd()` по умолчанию) |
+| `mcp_github_command` | MCP GitHub server command (по умолчанию `npx -y @modelcontextprotocol/server-github`) | Опционально |
 
-## PR Size Limits
+## PR size limits
+- Макс файлов: 30
+- Макс строк (добавления + удаления): 2000
+- При превышении возвращается просьба разбить PR.
 
-To ensure quality reviews within token limits:
+## Review output
+- Summary
+- Blocking Issues (с ссылками file:line)
+- Non-Blocking Issues
+- Tests assessment
+- Risks / Suggested improvements
 
-- **Max files**: 30 changed files
-- **Max lines**: 2000 lines changed (additions + deletions)
-
-PRs exceeding these limits will receive a polite message suggesting to split the PR.
-
-## Review Output
-
-Generated reviews include:
-
-1. **Summary**: Brief overview of the PR
-2. **Blocking Issues**: Must be fixed before merge (security, bugs, breaking changes)
-3. **Non-Blocking Issues**: Suggestions for improvement (style, performance, refactoring)
-4. **Tests Assessment**: Evaluation of test coverage
-5. **Risks**: Potential issues to be aware of
-6. **Suggested Improvements**: Future enhancements
-
-### Example Output
-
-```markdown
-# 🤖 AI Code Review
-
-## Summary
-This PR adds user authentication using JWT. Implementation looks solid but has one security concern.
-
-## 🚨 Blocking Issues
-
-### 1. api/auth.py
-**`api/auth.py:45`**
-Password comparison uses `==` instead of constant-time comparison, vulnerable to timing attacks
-
-💡 **Suggestion:** Use `secrets.compare_digest(password, stored_hash)` for constant-time comparison
-
-## ✅ No Non-Blocking Issues
-
-## 🧪 Tests
-Good test coverage for happy path. Consider adding tests for edge cases (expired tokens, invalid signatures).
-
-## ⚠️ Risks
-- Breaking change: New authentication required for all API endpoints
-
-## 🚀 Suggested Improvements
-- Add rate limiting to prevent brute force attacks
-- Consider implementing refresh tokens
-```
-
-## RAG Context
-
-The system uses RAG (Retrieval-Augmented Generation) to provide project-specific context:
-
-### Indexed Sources
-- `README.md` - Project overview
-- `CONTRIBUTING.md` - Contribution guidelines
-- All source code - Existing patterns and conventions
-- Configuration files - Linting rules and standards
-
-### Context Retrieval
-For each PR, the system:
-1. Extracts key terms from PR title, description, and changed files
-2. Searches RAG index for relevant documentation and code patterns
-3. Includes top results in the review prompt
-
-### Cache Strategy
-- Index is cached at `.cache/rag_index.json`
-- GitHub Actions caches index across workflow runs
-- Index rebuilds automatically when cache is stale
-
-## Anti-Hallucination Measures
-
-To ensure accurate reviews:
-
-1. **Explicit constraints**: Reviewer only comments on visible code
-2. **Citation requirement**: All issues must cite `file:line`
-3. **Uncertainty handling**: System says "needs human review" when uncertain
-4. **Evidence requirement**: Issues must quote problematic code
-5. **JSON schema**: Structured output prevents rambling
+## RAG context
+- Источники: `README.md`, `CONTRIBUTING.md`, исходники и конфиги.
+- Кэш индекса: `.cache/rag_index.json` в `PROJECT_ROOT`. Пересборка: `python -m code_review.build_index`.
 
 ## Development
-
-### Running Tests
-
-```bash
-pytest code_review/tests/ -v
-```
-
-### Code Structure
-
-```
-code_review/
-├── __init__.py
-├── models.py           # Data structures
-├── config.py           # Configuration
-├── pr_fetcher.py       # MCP GitHub integration
-├── context_builder.py  # RAG integration
-├── reviewer.py         # GigaChat integration
-├── formatter.py        # Markdown formatting
-├── poster.py           # GitHub posting
-├── github_action.py    # Main orchestrator
-├── build_index.py      # RAG indexing
-├── main.py            # Local testing CLI
-├── prompts/
-│   └── system_prompt.txt
-└── tests/
-    ├── __init__.py
-    ├── test_models.py
-    ├── test_formatter.py
-    └── test_context_builder.py
-```
+- Тесты: `pytest code_review/tests -v`.
+- Структура:
+  ```
+  code_review/
+  ├── build_index.py
+  ├── config.py
+  ├── context_builder.py
+  ├── formatter.py
+  ├── github_action.py
+  ├── main.py
+  ├── models.py
+  ├── poster.py
+  ├── pr_fetcher.py
+  ├── reviewer.py
+  ├── prompts/
+  └── tests/
+  ```
+- Зависимости из `requirements.txt` изолированы от остальной монорепы.
 
 ## Troubleshooting
-
-### Review fails with "Configuration error"
-
-Ensure all required environment variables are set. Check GitHub Actions secrets.
-
-### Review fails with "MCP connection error"
-
-Ensure `@modelcontextprotocol/server-github` is installed:
-```bash
-npm install -g @modelcontextprotocol/server-github
-```
-
-### Review fails with "RAG index missing"
-
-Build the index manually:
-```bash
-python -m code_review.build_index
-```
-
-### Review posts but is low quality
-
-- Check that RAG index is up to date
-- Verify GigaChat credentials are correct
-- Review system prompt in `prompts/system_prompt.txt`
-
-## Performance
-
-For medium PRs (15 files, 800 lines):
-- PR data fetch: 2-5 seconds
-- RAG context retrieval: 1-2 seconds
-- GigaChat inference: 10-30 seconds
-- Review posting: 2-5 seconds
-- **Total**: ~15-42 seconds
-
-## Security
-
-- GitHub token has minimal permissions (`contents: read`, `pull-requests: write`)
-- Tokens are never logged or exposed
-- Path traversal protection for file operations
-- Input validation on all external data
+- "Configuration error": проверь обязательные env.
+- "MCP connection error": убедись, что `@modelcontextprotocol/server-github` установлен и доступен в `$PATH`.
+- "RAG index missing": пересобери `python -m code_review.build_index` (учти `PROJECT_ROOT`).
 
 ## License
 
 Same as parent project.
-
-## Contributing
-
-See project's main CONTRIBUTING.md for guidelines.

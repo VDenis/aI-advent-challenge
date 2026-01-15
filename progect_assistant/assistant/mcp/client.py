@@ -70,6 +70,13 @@ class MCPStdioClient:
         }
         self._next_id += 1
         await self._send_request(request, expect_result=True)
+        await self._send_notification(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            }
+        )
         self._initialized = True
 
     async def _send_request(self, payload: Dict[str, Any], expect_result: bool = True) -> Dict[str, Any]:
@@ -103,6 +110,13 @@ class MCPStdioClient:
                 if "error" in message:
                     raise RuntimeError(f"{self.name}: {message['error']}")
                 return message.get("result", message)
+
+    async def _send_notification(self, payload: Dict[str, Any]) -> None:
+        await self._ensure_started()
+        assert self._proc and self._proc.stdin
+        data = json.dumps(payload, ensure_ascii=True) + "\n"
+        self._proc.stdin.write(data.encode())
+        await self._proc.stdin.drain()
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         request = {

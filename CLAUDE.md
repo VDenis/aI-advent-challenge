@@ -1,0 +1,28 @@
+# Памятка для Claude
+
+## Контекст
+- Монорепо демо: MCP сервер погоды (`weather_mcp`), LangChain агент на GigaChat (`weather_mcp_cli`), набор CLI/ботов (`cli`, `bots`) и локальный Developer Assistant (`progect_assistant`).
+- Ассистент умеет работать как CLI, веб-UI и MCP сервер с RAG + git инструментами.
+
+## Подготовка окружения
+- Python 3.10+. Базовые зависимости для погодного демо: `pip install -e .` из корня.
+- Дополнительно при необходимости: `pip install -r cli/requirements.txt` (CLI/GigaChat/HF) и `pip install -r bots/requirements.txt` (Telegram-боты).
+- Создай `.env` по `env.example` (GIGACHAT_*, HF_TOKEN/HF_BOT_TOKEN, GIGA_* и т.д.).
+- Готовый шаблон для Claude Desktop в `progect_assistant/claude_desktop_config.json` — обнови `PROJECT_ROOT`, если путь другой.
+
+## Как запускать
+- MCP сервер погоды (Open-Meteo): `python -m weather_mcp.server`.
+- GigaChat агент, который сам дергает MCP tools: `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`.
+- Developer Assistant (CLI): `python -m progect_assistant.main`.
+- Developer Assistant как MCP сервер: `python -m progect_assistant.mcp_server` (использует RAG + git MCP).
+- Git MCP отдельно: `python -m progect_assistant.git_mcp_server`.
+- Веб-UI ассистента: `python -m progect_assistant.web_server`.
+
+## Тесты/проверки
+- Автотестов почти нет: `pytest cli/tests/test_hf_llama3_openai.py` (нужны токены HF/OpenAI).
+- Для дымовой проверки погоды запусти `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"` — агент должен вызвать `get_current_weather`.
+
+## Примечания
+- RAG индекс ассистента хранится в `progect_assistant/.cache/rag_index.json`; команда `/index` в CLI пересобирает его.
+- Конфиг MCP для ассистента/гита/саппорта лежит в `progect_assistant/mcp_config.json`.
+- Не коммить `.env`, логи (`progect_assistant/logs/`), `.cache/`, `venv*`, `venvmcp*`.

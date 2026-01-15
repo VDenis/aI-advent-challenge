@@ -1,0 +1,31 @@
+{
+  "users": [
+    {
+      "user_id": "user-001",
+      "name": "John Developer",
+      "email": "john@example.com",
+      "created_at": "2025-01-10T00:00:00Z",
+      "total_tickets": 2,
+      "resolved_tickets": 1,
+      "tags": ["developer", "premium"]
+    },
+    {
+      "user_id": "user-002",
+      "name": "Jane Tester",
+      "email": "jane@example.com",
+      "created_at": "2025-01-12T00:00:00Z",
+      "total_tickets": 1,
+      "resolved_tickets": 0,
+      "tags": ["tester"]
+    },
+    {
+      "user_id": "user-003",
+      "name": "Alex DevOps",
+      "email": "alex@example.com",
+      "created_at": "2025-01-14T00:00:00Z",
+      "total_tickets": 1,
+      "resolved_tickets": 1,
+      "tags": ["devops", "admin"]
+    }
+  ]
+}

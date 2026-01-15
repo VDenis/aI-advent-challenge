@@ -1,0 +1,44 @@
+{
+  "faqs": [
+    {
+      "id": "faq-001",
+      "category": "setup",
+      "question": "How do I install project_assistant?",
+      "answer": "Run `python -m progect_assistant.main` from the repository root. Set PROJECT_ROOT environment variable if needed. Make sure you have Python 3.8+ installed.",
+      "keywords": ["install", "setup", "getting started", "run"],
+      "updated_at": "2025-01-15T00:00:00Z"
+    },
+    {
+      "id": "faq-002",
+      "category": "troubleshooting",
+      "question": "Why is RAG indexing slow?",
+      "answer": "Large codebases take time to index. Use /index command to rebuild. Check if .cache/rag_index.json exists and has proper permissions. Exclude large directories like node_modules.",
+      "keywords": ["rag", "slow", "indexing", "performance", "cache"],
+      "updated_at": "2025-01-15T00:00:00Z"
+    },
+    {
+      "id": "faq-003",
+      "category": "troubleshooting",
+      "question": "MCP tools not working?",
+      "answer": "Check mcp_config.json configuration. Verify Python environment has 'mcp' package installed. Test with /mcp list command to see available tools.",
+      "keywords": ["mcp", "tools", "not working", "unavailable"],
+      "updated_at": "2025-01-15T00:00:00Z"
+    },
+    {
+      "id": "faq-004",
+      "category": "usage",
+      "question": "How do I search documentation?",
+      "answer": "Use /help <topic> command for RAG-powered search through documentation. Example: /help troubleshooting. The system searches indexed markdown files and code.",
+      "keywords": ["search", "documentation", "help", "rag"],
+      "updated_at": "2025-01-15T00:00:00Z"
+    },
+    {
+      "id": "faq-005",
+      "category": "setup",
+      "question": "How to configure Ollama or HuggingFace?",
+      "answer": "Set OLLAMA_BASE_URL and OLLAMA_MODEL environment variables for Ollama (default: http://localhost:11434/v1). For HuggingFace, set HF_API_KEY and HF_MODEL.",
+      "keywords": ["ollama", "huggingface", "config", "llm", "api"],
+      "updated_at": "2025-01-15T00:00:00Z"
+    }
+  ]
+}

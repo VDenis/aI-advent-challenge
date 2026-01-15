@@ -7,20 +7,18 @@
 - Docker + Docker Compose
 - Доступ к ADB (ставится вместе с Android Platform Tools)
 
-## Запуск MCP STDIO-сервера через Docker
-1. Построить образ (из корня `mobileautomation`):
+## Быстрый старт (STDIO MCP)
+1. Собери образ (из `mobileautomation/`):
    ```bash
    docker build -t mobileautomation-mcp .
    ```
-2. Запустить сервер (STDIO; нужно пробросить Docker socket):
+2. Запусти сервер (нужен Docker socket):
    ```bash
-   docker run --rm -i \
-     -v /var/run/docker.sock:/var/run/docker.sock \
-     mobileautomation-mcp
+   docker run --rm -i -v /var/run/docker.sock:/var/run/docker.sock mobileautomation-mcp
    ```
-   Логи пишутся в stderr, STDIO остаётся чистым для MCP.
+   Логи идут в stderr, STDIO остаётся чистым для MCP.
 
-> Скрипт `./scripts/run_mcp.sh` делает те же шаги: билд образа и запуск контейнера.
+Альтернатива: `./scripts/run_mcp.sh` (сборка + запуск).
 
 ## Подключение в Cursor
 1) Добавить этот сервер:
@@ -70,6 +68,7 @@
 - Для `install_apk` указывайте полный путь к APK.
 - Если подключено только одно устройство, можно не передавать `serial`.
 - Используйте `env_status` для проверки, что эмулятор запущен и слушает ADB.
+- Для собственного docker-compose укажите `COMPOSE_FILE_PATH` (смонтируйте файл), альтернативную команду compose задайте `DOCKER_COMPOSE_CMD`.
 
 ## Быстрый сценарий: калькулятор + два скриншота
 Минимальные шаги в Cursor с двумя MCP:
@@ -87,4 +86,3 @@
    - `env_down()` в orchestrator.
 
 Итог: orchestrator отвечает за эмулятор/ADB и первый снимок; автоматизация действий, второй снимок и сравнение — через `mobile-mcp`.
-

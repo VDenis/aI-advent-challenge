@@ -1,0 +1,109 @@
+{
+  "tickets": [
+    {
+      "ticket_id": "TICKET-001",
+      "user_id": "user-001",
+      "status": "resolved",
+      "priority": "medium",
+      "subject": "RAG index not loading",
+      "description": "After running /index, the cache file exists but searches return no results. The .cache/rag_index.json file is created but seems empty.",
+      "created_at": "2025-01-12T10:30:00Z",
+      "updated_at": "2025-01-12T14:00:00Z",
+      "resolved_at": "2025-01-12T14:00:00Z",
+      "tags": ["rag", "bug"],
+      "comments": [
+        {
+          "comment_id": "comment-001",
+          "author": "support",
+          "text": "Please check if the .cache directory has write permissions. Also verify that your PROJECT_ROOT environment variable is set correctly.",
+          "created_at": "2025-01-12T11:00:00Z"
+        },
+        {
+          "comment_id": "comment-002",
+          "author": "user-001",
+          "text": "Fixed! It was a permission issue. Changed directory permissions with chmod 755 .cache",
+          "created_at": "2025-01-12T14:00:00Z"
+        }
+      ],
+      "resolution": "User granted write permissions to .cache directory. Issue resolved.",
+      "similar_tickets": []
+    },
+    {
+      "ticket_id": "TICKET-002",
+      "user_id": "user-002",
+      "status": "in-progress",
+      "priority": "high",
+      "subject": "Web UI connection timeout",
+      "description": "When trying to access the web interface at http://127.0.0.1:8088, the connection times out after 30 seconds. Server starts successfully but doesn't respond.",
+      "created_at": "2025-01-14T09:15:00Z",
+      "updated_at": "2025-01-14T15:30:00Z",
+      "resolved_at": null,
+      "tags": ["web", "network", "bug"],
+      "comments": [
+        {
+          "comment_id": "comment-003",
+          "author": "support",
+          "text": "Can you check if port 8088 is already in use? Try: lsof -i :8088 or netstat -an | grep 8088",
+          "created_at": "2025-01-14T10:00:00Z"
+        },
+        {
+          "comment_id": "comment-004",
+          "author": "user-002",
+          "text": "Yes, found another process on port 8088. How do I change the port?",
+          "created_at": "2025-01-14T11:00:00Z"
+        },
+        {
+          "comment_id": "comment-005",
+          "author": "support",
+          "text": "Currently investigating the best way to make port configurable. Temporary solution: kill the other process or modify PORT variable in web_server.py",
+          "created_at": "2025-01-14T15:30:00Z"
+        }
+      ],
+      "resolution": null,
+      "similar_tickets": []
+    },
+    {
+      "ticket_id": "TICKET-003",
+      "user_id": "user-001",
+      "status": "open",
+      "priority": "low",
+      "subject": "Authorization error in CLI",
+      "description": "Getting 'Authorization header missing' error when using /tool commands. Web UI works fine, only CLI is affected.",
+      "created_at": "2025-01-15T08:00:00Z",
+      "updated_at": "2025-01-15T08:00:00Z",
+      "resolved_at": null,
+      "tags": ["cli", "auth", "bug"],
+      "comments": [],
+      "resolution": null,
+      "similar_tickets": []
+    },
+    {
+      "ticket_id": "TICKET-004",
+      "user_id": "user-003",
+      "status": "resolved",
+      "priority": "medium",
+      "subject": "MCP server not starting",
+      "description": "When running python -m progect_assistant.mcp_server, get ImportError: No module named 'mcp'. Fresh installation on Ubuntu 22.04.",
+      "created_at": "2025-01-13T14:20:00Z",
+      "updated_at": "2025-01-13T15:45:00Z",
+      "resolved_at": "2025-01-13T15:45:00Z",
+      "tags": ["mcp", "setup", "dependency"],
+      "comments": [
+        {
+          "comment_id": "comment-006",
+          "author": "support",
+          "text": "You need to install the MCP package: pip install anthropic-mcp or pip install mcp",
+          "created_at": "2025-01-13T14:30:00Z"
+        },
+        {
+          "comment_id": "comment-007",
+          "author": "user-003",
+          "text": "Installed via pip install mcp and it works now. Thanks!",
+          "created_at": "2025-01-13T15:45:00Z"
+        }
+      ],
+      "resolution": "User installed missing mcp package dependency.",
+      "similar_tickets": ["TICKET-003"]
+    }
+  ]
+}

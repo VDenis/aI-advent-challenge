@@ -1,8 +1,8 @@
 from typing import Any, Dict
 
-from .git_mcp import GitMCPAdapter
-from .rag import RagIndexer, RagSearch
-from .tools import Tool, ToolContext
+from progect_assistant.assistant.core.registry import Tool, ToolContext
+from progect_assistant.assistant.mcp import GitMCPAdapter
+from progect_assistant.assistant.rag import RagIndexer, RagSearch
 
 
 class RagSearchTool(Tool):

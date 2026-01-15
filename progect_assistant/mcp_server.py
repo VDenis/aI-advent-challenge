@@ -4,10 +4,14 @@ import os
 from pathlib import Path
 from typing import Dict
 
-from mcp.server.fastmcp import FastMCP
+try:
+    # Prefer standalone fastmcp package; fall back to mcp bundled version if missing.
+    from fastmcp import FastMCP
+except ImportError:
+    from mcp.server.fastmcp import FastMCP
 
-from progect_assistant.assistant.git_mcp import GitMCPAdapter
 from progect_assistant.assistant.help import build_help_response
+from progect_assistant.assistant.mcp import GitMCPAdapter
 from progect_assistant.assistant.rag import RagIndexer, RagSearch
 
 PROJECT_ROOT = os.environ.get("PROJECT_ROOT", os.getcwd())

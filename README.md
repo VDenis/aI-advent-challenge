@@ -1,95 +1,44 @@
 # gigachat-mcp-weather (монорепо демо‑проектов)
 
-Демо‑проект: MCP stdio сервер погоды (Open‑Meteo, без API key) и LangChain‑агент на GigaChat, который сам вызывает MCP tools через `langchain-mcp-adapters`. В репозитории также есть дополнительные CLI и Telegram‑боты.
+Монорепо с несколькими MCP/LLM демо: погодный сервер + агент на GigaChat, локальный Developer Assistant (CLI/web/MCP), AI code review, RAG примеры, веб/мобильная автоматизация и боты.
 
-## Требования
+## Состав монорепо
+- `weather_mcp` + `weather_mcp_cli` — FastMCP сервер погоды (Open-Meteo) и LangChain агент на GigaChat.
+- `progect_assistant/` — локальный Developer Assistant (CLI, web, MCP) с RAG и git инструментами. Шаблоны клиентов для Claude/Codex в `progect_assistant/claude_desktop_config.json` и `progect_assistant/codex_mcp_config.json`.
+- `code_review/` — AI code review для GitHub PR (GigaChat + MCP GitHub).
+- `rag_search/` — локальный RAG на FAISS + Ollama.
+- `websearch/` — Textual TUI, который ищет через MCP Brave и суммаризирует через GigaChat MCP.
+- `reminder/` — MCP SSE планировщик + Textual клиент в Docker.
+- `mobileautomation/` — MCP orchestrator для Android эмулятора/ADB в Docker.
+- `bots/` — Telegram/CLI демо, включая YouTube RAG бот (`bots/youtalk`).
+- Памятки для агентов: `CLAUDE.md` и `AGENTS.md`.
 
-- Python 3.10+
-- Доступ к GigaChat API (`GIGACHAT_CREDENTIALS` base64(client_id:client_secret), `GIGACHAT_SCOPE`)
-- Интернет‑доступ к https://api.open-meteo.com (без API key)
+## Быстрый старт: погода (GigaChat + MCP)
+1. Python 3.10+ и окружение:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   pip install -e .
+   cp env.example .env  # заполни GIGACHAT_* для GigaChat
+   ```
+2. Подними MCP сервер погоды:
+   ```bash
+   python -m weather_mcp.server
+   ```
+3. Запусти агента (auto tool-calling по stdio):
+   ```bash
+   python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"
+   # или entrypoints: weather-mcp-server / gigachat-weather-agent
+   ```
+   В выводе должны быть логи `get_current_weather` и финальный ответ из данных инструмента.
 
-## Быстрый старт
+## Быстрый старт: Developer Assistant
+1. Установи зависимости (из корня): `pip install -e .`
+2. CLI: `python -m progect_assistant.main`
+3. MCP сервер: `python -m progect_assistant.mcp_server` (использует `progect_assistant/mcp_config.json`, переменная `PROJECT_ROOT` по умолчанию = текущая папка).
+4. Web UI: `python -m progect_assistant.web_server` (порт 8088 по умолчанию).
+5. Git MCP отдельно: `python -m progect_assistant.git_mcp_server`.
 
-1) Python 3.10+ и venv:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e .
-```
-
-2) Создай `.env` из шаблона `env.example`:
-
-```
-GIGACHAT_CREDENTIALS=base64(client_id:client_secret)
-GIGACHAT_SCOPE=GIGACHAT_API_PERS
-GIGACHAT_VERIFY_SSL_CERTS=false  # true в проде, false локально/с самоподписанным
-```
-
-3) Запусти MCP сервер погоды (stdio):
-
-```bash
-python -m weather_mcp.server
-```
-
-4) Запусти CLI агента (агент сам подключится к серверу по stdio и выберет tools):
-
-```bash
-python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"
-```
-
-Альтернатива через entrypoints из `pyproject.toml`:
-
-```bash
-weather-mcp-server
-gigachat-weather-agent "Какая сейчас температура и ветер в Москве?"
-```
-
-Ответ покажет:
-- Логи вызовов tools (какой tool, с какими args, краткий результат).
-- Финальный ответ модели.
-
-## Что внутри
-
-- `weather_mcp.server`: FastMCP stdio сервер с инструментами:
-  - `get_current_weather(latitude, longitude, timezone?)` → текущая температура и ветер.
-  - `get_hourly_forecast(latitude, longitude, hours<=168, timezone?)` → температура и влажность по часам.
-  - httpx async клиент, таймауты и 2 попытки, валидация диапазонов.
-  - Ошибки API возвращаются текстом в ответе tool, сервер не падает.
-- `weather_mcp_cli.agent`: LangChain‑агент на GigaChat + MultiServerMCPClient. Модель умеет tool-calling (`llm.bind_tools(tools)`), цикл: `модель → tool_calls → выполнить tool → ToolMessage → модель` пока не появится финальный ответ. Стриминг отключён для устойчивого tool-calling. В system prompt добавлено правило: использовать инструменты для вопросов о погоде и не выдумывать значения. Для Москвы захардкожены координаты 55.75, 37.62.
-- `weather_mcp_cli.main`: CLI. Пример: `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`.
-- `env.example`: шаблон переменных окружения GigaChat.
-- `pyproject.toml`: зависимости `fastmcp`, `mcp`, `httpx`, `langchain`, `langchain-community`, `langchain-mcp-adapters`, `python-dotenv`.
-- Если tool-calling не срабатывает: убедись, что MCP сервер запущен в отдельном процессе и `.env` с GigaChat данными загружен (перезапусти CLI после изменения env).
-
-## Дополнительные CLI
-
-Зависимости:
-- CLI: `pip install -r cli/requirements.txt`
-- Telegram‑боты: `pip install -r bots/requirements.txt`
-
-Переменные окружения (см. `env.example`):
-- Для CLI чатов: `GIGA_CLIENT_BASIC`, `GIGA_API_BASE_URL`, `GIGA_MODEL_NAME`
-- Для HF инструментов/ботов: `HF_TOKEN`, `HF_BOT_TOKEN`
-
-Запуск:
-- Простой консольный чат с GigaChat: `python -m cli.console_chat`
-- Консольный чат с памятью сессий: `python -m cli.history_chat.console_chat`
-- Запуск Telegram ботов: `python bots/main.py --bot real_estate` (или `literary`, `hf_demo`)
-
-## Пример вывода CLI
-
-```
-Tool calls:
-1. get_current_weather args={'latitude': 55.75, 'longitude': 37.62} -> {"latitude": 55.75, "longitude": 37.62, "timezone": "GMT", "current": {...}}
-
-Assistant:
-В Москве сейчас около 4 °C, ветер 3 м/с. Могу показать почасовой прогноз?
-```
-
-## Acceptance checklist
-
-- Запусти CLI агента:
-  - `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`
-- В логах должно быть видно, что GigaChat сам инициировал вызов `get_current_weather` (и при необходимости `get_hourly_forecast`).
-- Убедись, что ответ содержит данные из инструмента, а не придуманную погоду.
+## Acceptance (погодное демо)
+- Запусти `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`
+- Убедись, что агент сам вызвал `get_current_weather` (и при необходимости `get_hourly_forecast`) и ответ опирается на результаты инструмента.

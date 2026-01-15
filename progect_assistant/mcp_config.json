@@ -12,5 +12,12 @@
       "GIT_MCP_PROJECT_ROOT": "${PROJECT_ROOT}",
       "PYTHONPATH": "${PROJECT_ROOT}"
     }
+  },
+  "support": {
+    "command": "python -m progect_assistant.support_mcp_server",
+    "env": {
+      "PROJECT_ROOT": "${PROJECT_ROOT}",
+      "PYTHONPATH": "${PROJECT_ROOT}"
+    }
   }
 }

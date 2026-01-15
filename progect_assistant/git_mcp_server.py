@@ -5,7 +5,11 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-from mcp.server.fastmcp import FastMCP
+try:
+    # Prefer standalone fastmcp package; fall back to mcp bundled version if missing.
+    from fastmcp import FastMCP
+except ImportError:
+    from mcp.server.fastmcp import FastMCP
 
 PROJECT_ROOT = Path(os.environ.get("GIT_MCP_PROJECT_ROOT", os.getcwd())).resolve()
 MAX_DIFF_LINES = 200

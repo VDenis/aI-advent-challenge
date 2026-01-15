@@ -25,8 +25,21 @@ const ragProgressBar = document.getElementById("ragProgressBar");
 const ragProgressText = document.getElementById("ragProgressText");
 const ragContextPanel = document.getElementById("ragContextPanel");
 const ragContextText = document.getElementById("ragContextText");
+const supportModeToggle = document.getElementById("supportMode");
+const supportPanel = document.getElementById("supportPanel");
+const ticketList = document.getElementById("ticketList");
+const ticketDetail = document.getElementById("ticketDetail");
+const ticketTitle = document.getElementById("ticketTitle");
+const ticketInfo = document.getElementById("ticketInfo");
+const ticketComments = document.getElementById("ticketComments");
+const commentForm = document.getElementById("commentForm");
+const commentInput = document.getElementById("commentInput");
+const backToListBtn = document.getElementById("backToList");
+const statusFilter = document.getElementById("statusFilter");
+const createTicketBtn = document.getElementById("createTicketBtn");
 
 let messages = [];
+let currentTicket = null;
 let defaultConfig = {};
 let isHfKeyOverridden = false;
 let ragPollTimer = null;
@@ -477,6 +490,153 @@ providerSelect.addEventListener("change", () => {
   overrideHfKeyBtn.title = "Override env API key";
   updateProviderFields();
 });
+
+// ================================
+// Support Mode Functions
+// ================================
+
+const loadTickets = async () => {
+  const response = await fetch("/api/support/tickets");
+  if (!response.ok) return;
+  const data = await response.json();
+  renderTickets(data.tickets || []);
+};
+
+const renderTickets = (tickets) => {
+  ticketList.innerHTML = "";
+
+  // Apply status filter
+  const filter = statusFilter.value;
+  const filtered = filter ? tickets.filter(t => t.status === filter) : tickets;
+
+  if (filtered.length === 0) {
+    ticketList.innerHTML = "<p class='note'>No tickets found</p>";
+    return;
+  }
+
+  filtered.forEach((ticket) => {
+    const card = document.createElement("div");
+    card.className = `ticket-card status-${ticket.status}`;
+
+    const header = document.createElement("div");
+    header.className = "ticket-header";
+    header.innerHTML = `
+      <strong>${ticket.ticket_id}</strong>
+      <span class="badge ${ticket.status}">${ticket.status}</span>
+    `;
+
+    const subject = document.createElement("p");
+    subject.textContent = ticket.subject;
+
+    const meta = document.createElement("small");
+    meta.textContent = `Priority: ${ticket.priority} | Created: ${new Date(ticket.created_at).toLocaleString()}`;
+
+    card.appendChild(header);
+    card.appendChild(subject);
+    card.appendChild(meta);
+
+    card.onclick = () => loadTicketDetail(ticket.ticket_id);
+    ticketList.appendChild(card);
+  });
+};
+
+const loadTicketDetail = async (ticketId) => {
+  const response = await fetch(`/api/support/ticket/${ticketId}`);
+  if (!response.ok) return;
+  const data = await response.json();
+  if (data.error) {
+    alert(data.error);
+    return;
+  }
+
+  currentTicket = data.ticket;
+  renderTicketDetail(data.ticket);
+};
+
+const renderTicketDetail = (ticket) => {
+  ticketList.style.display = "none";
+  ticketDetail.style.display = "block";
+
+  ticketTitle.textContent = `${ticket.ticket_id}: ${ticket.subject}`;
+
+  ticketInfo.innerHTML = `
+    <p><strong>Status:</strong> <span class="badge ${ticket.status}">${ticket.status}</span></p>
+    <p><strong>Priority:</strong> ${ticket.priority}</p>
+    <p><strong>User:</strong> ${ticket.user_id}</p>
+    <p><strong>Created:</strong> ${new Date(ticket.created_at).toLocaleString()}</p>
+    <p><strong>Description:</strong></p>
+    <p>${ticket.description}</p>
+    ${ticket.resolution ? `<p><strong>Resolution:</strong> ${ticket.resolution}</p>` : ""}
+  `;
+
+  ticketComments.innerHTML = "<h4>Comments</h4>";
+  if (ticket.comments && ticket.comments.length > 0) {
+    ticket.comments.forEach((comment) => {
+      const commentDiv = document.createElement("div");
+      commentDiv.className = "comment";
+      commentDiv.innerHTML = `
+        <strong>${comment.author}</strong> <small>${new Date(comment.created_at).toLocaleString()}</small>
+        <p>${comment.text}</p>
+      `;
+      ticketComments.appendChild(commentDiv);
+    });
+  } else {
+    ticketComments.innerHTML += "<p class='note'>No comments yet</p>";
+  }
+};
+
+// ================================
+// Support Mode Event Listeners
+// ================================
+
+supportModeToggle.addEventListener("change", () => {
+  if (supportModeToggle.checked) {
+    supportPanel.style.display = "block";
+    loadTickets();
+  } else {
+    supportPanel.style.display = "none";
+  }
+});
+
+statusFilter.addEventListener("change", () => {
+  loadTickets();
+});
+
+backToListBtn.addEventListener("click", () => {
+  ticketDetail.style.display = "none";
+  ticketList.style.display = "block";
+  currentTicket = null;
+});
+
+commentForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!currentTicket || !commentInput.value.trim()) return;
+
+  const comment = commentInput.value.trim();
+
+  // In production, this would call /api/support/update endpoint
+  // For now, just show the comment locally
+  alert(`Comment would be added to ${currentTicket.ticket_id}: ${comment}`);
+  commentInput.value = "";
+
+  // Reload ticket to show new comment
+  // await loadTicketDetail(currentTicket.ticket_id);
+});
+
+createTicketBtn.addEventListener("click", () => {
+  const subject = prompt("Ticket subject:");
+  if (!subject) return;
+
+  const description = prompt("Problem description:");
+  if (!description) return;
+
+  alert(`New ticket would be created:\nSubject: ${subject}\nDescription: ${description}`);
+  // In production, call API to create ticket and reload list
+});
+
+// ================================
+// Initialization
+// ================================
 
 fetchConfig();
 fetchTools();

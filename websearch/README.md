@@ -2,12 +2,12 @@
 
 Консольное Textual-приложение, которое ищет через MCP Brave Search, делает саммари через MCP GigaChat и сохраняет результаты в файловую систему только через MCP Desktop Commander. Клиент общается с MCP по HTTP (JSON-RPC), без docker attach.
 
-## Что внутри
-- `docker-compose.yml` — сервисы `brave-search`, `desktop-commander`, `gigachat-summary` и `tui`.
-- `cursor.json` — конфигурация MCP для Cursor (по-прежнему stdio-пример; для HTTP используйте прямые URL из .env).
-- `tui/` — Textual TUI + клиенты MCP stdio.
-- `mcp/gigachat-summary/` — MCP HTTP сервер (JSON-RPC) с tool `summarize(text, style, max_chars)` (использует GigaChat API с фолбэком).
-- `output/` — папка для результатов (пишется через Desktop Commander, смонтирована в контейнер).
+## Быстрый старт
+1. Подготовь окружение: `cp .env.example .env` и заполни `BRAVE_API_KEY`, `GIGACHAT_API_KEY` (если пусто — будет фолбэк-саммари), при необходимости `PROJECT_ROOT`/`OUTPUT_DIR`.
+2. Подними MCP серверы: `docker compose up -d brave-search desktop-commander gigachat-summary`.
+   - Адреса MCP HTTP должны включать `/mcp` (прописаны в `docker-compose.yml` и `.env.example`), можно указывать списком через запятую (`http://brave-search:3000/mcp,http://localhost:3001/mcp`).
+3. Запусти TUI интерактивно: `docker compose run --rm --service-ports tui` (именно `run`, чтобы был ввод). Флаги: `Enter` — поиск, `s` — саммари, `w` — сохранить, `q` — выход.
+4. Результаты сохраняются в `websearch/output/` через Desktop Commander.
 
 ## Переменные окружения
 Скопируйте `.env.example` в `.env` и заполните:
@@ -18,9 +18,9 @@
 - `MCP_*_CONTAINER` — имена контейнеров для `docker attach` (совпадают с compose).
 
 ## Запуск
-1. `cp .env.example .env` и заполните ключи/URL. `MCP_*_URL` можно указывать списком через запятую — клиент попробует последовательно (например `http://brave-search:3000,http://localhost:3001`). По умолчанию стоят адреса контейнеров, плюс код сам добавляет fallback на `localhost` (3001/3002/3003).
+1. `cp .env.example .env` и заполните ключи/URL. `MCP_*_URL` можно указывать списком через запятую — клиент попробует последовательно (например `http://brave-search:3000/mcp,http://localhost:3001/mcp`). По умолчанию стоят адреса контейнеров, плюс код сам добавляет fallback на `localhost` (3001/3002/3003).
 2. Поднимите MCP серверы: `docker compose up -d brave-search desktop-commander gigachat-summary`.
-   - Для MCP HTTP обязателен путь `/mcp` в адресе. Пример: `http://brave-search:3000/mcp,http://localhost:3001/mcp`. В `docker-compose.yml` уже стоят такие значения по умолчанию, добавьте их и в свой `.env`.
+   - Для MCP HTTP обязателен путь `/mcp` в адресе. В `docker-compose.yml` уже стоят такие значения по умолчанию, добавьте их и в свой `.env`.
    - Если запускаете TUI в контейнере, доступ к проброшенным портам на хосте есть по `host.docker.internal` (фолбэк зашит в код), поэтому можно не прописывать это вручную.
 3. Запустите TUI интерактивно: `docker compose run --rm --service-ports tui` (важно именно `run`, а не `up`, иначе увидите только логи и ввод будет недоступен). После изменений пересоберите образ: `docker compose build tui`. При необходимости передайте `-e TERM=xterm-256color`.
    - Клавиши: `Enter` — поиск, `s` — саммари, `w` — сохранить, `q` — выход.
@@ -44,4 +44,10 @@ Content-Type: application/json
 ## Почему `cursor.json`
 Файл `websearch/cursor.json` добавляет три MCP сервера для Cursor через stdio (`docker run -i`). Пути/имена совпадают с docker‑compose и можно править при необходимости.
 
+## Что внутри
+- `docker-compose.yml` — сервисы `brave-search`, `desktop-commander`, `gigachat-summary` и `tui`.
+- `cursor.json` — конфигурация MCP для Cursor (stdio-пример).
+- `tui/` — Textual TUI + клиенты MCP (stdio).
+- `mcp/gigachat-summary/` — MCP HTTP сервер с tool `summarize(text, style, max_chars)` (использует GigaChat API с фолбэком).
+- `output/` — папка для результатов (создаётся через Desktop Commander).
 

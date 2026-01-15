@@ -4,15 +4,14 @@ import os
 import shlex
 import uuid
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict
+
+from progect_assistant.assistant.help import build_help_response, help_menu
+from progect_assistant.assistant.mcp import MCPStdioClient, close_all_clients, resolve_mcp_entry, run_async
+from progect_assistant.assistant.rag import RagIndexer, RagSearch
 
 from .executor import ToolExecutionError, ToolExecutor
-from .git_mcp import close_all_clients
-from .mcp_client import MCPStdioClient, run_async
-from .mcp_config import resolve_mcp_entry
-from .help import build_help_response, help_menu
-from .rag import RagIndexer, RagSearch
-from .tools import ToolContext, ToolRegistry
+from .registry import ToolContext, ToolRegistry
 
 
 @dataclass

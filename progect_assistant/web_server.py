@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shlex
 import threading
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,8 +14,12 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from progect_assistant.assistant.llm import LLMError, openai_chat_completion
-from progect_assistant.assistant.mcp_client import MCPStdioClient, run_async
-from progect_assistant.assistant.mcp_config import load_mcp_config, resolve_mcp_entry
+from progect_assistant.assistant.mcp import (
+    MCPStdioClient,
+    load_mcp_config,
+    resolve_mcp_entry,
+    run_async,
+)
 from progect_assistant.assistant.rag import RagIndexer, RagSearch
 
 
@@ -47,6 +53,142 @@ _RAG_STATUS: Dict[str, Any] = {
     "error": "",
 }
 _RAG_THREAD: Optional[threading.Thread] = None
+
+
+class MCPProcessManager:
+    """Manages persistent MCP server processes."""
+
+    def __init__(self, project_root: str):
+        self.project_root = project_root
+        self.servers: Dict[str, Dict[str, Any]] = {}
+        self.lock = asyncio.Lock()
+
+    async def start_all(self):
+        """Start all configured MCP servers at web server startup."""
+        entries = _available_mcp_entries()
+        for name in entries.keys():
+            await self.start_server(name)
+
+    async def start_server(self, name: str):
+        """Start a single MCP server as persistent process."""
+        try:
+            entry = resolve_mcp_entry(self.project_root, name)
+            command = entry.get("command", "")
+
+            if not command:
+                async with self.lock:
+                    self.servers[name] = {
+                        "client": None,
+                        "status": "error",
+                        "error": "No command configured",
+                        "tools_count": 0,
+                        "last_check": time.time(),
+                    }
+                return
+
+            env = {"PROJECT_ROOT": self.project_root, **entry.get("env", {})}
+            client = MCPStdioClient(command=shlex.split(command), name=f"{name}-mcp", env=env)
+
+            # Test connection
+            tools = await client.list_tools()
+
+            async with self.lock:
+                self.servers[name] = {
+                    "client": client,
+                    "status": "connected",
+                    "error": None,
+                    "tools_count": len(tools),
+                    "last_check": time.time(),
+                }
+
+            print(f"✓ MCP server '{name}' started ({len(tools)} tools)")
+
+        except Exception as e:
+            print(f"✗ MCP server '{name}' failed to start: {e}")
+            async with self.lock:
+                self.servers[name] = {
+                    "client": None,
+                    "status": "error",
+                    "error": str(e),
+                    "tools_count": 0,
+                    "last_check": time.time(),
+                }
+
+    async def stop_server(self, name: str):
+        """Stop a single MCP server."""
+        async with self.lock:
+            instance = self.servers.get(name)
+            if instance and instance.get("client"):
+                try:
+                    await instance["client"].close()
+                    print(f"✓ MCP server '{name}' stopped")
+                except Exception as e:
+                    print(f"✗ Error stopping MCP server '{name}': {e}")
+                finally:
+                    self.servers[name]["client"] = None
+                    self.servers[name]["status"] = "disconnected"
+
+    async def stop_all(self):
+        """Stop all running servers (at shutdown)."""
+        for name in list(self.servers.keys()):
+            await self.stop_server(name)
+
+    async def get_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get status of all servers (connected/disconnected/error)."""
+        async with self.lock:
+            status = {}
+            for name, instance in self.servers.items():
+                status[name] = {
+                    "status": instance.get("status", "unknown"),
+                    "error": instance.get("error"),
+                    "tools_count": instance.get("tools_count", 0),
+                    "last_check": instance.get("last_check", 0),
+                }
+            return status
+
+    async def list_all_tools(self) -> List[Dict[str, Any]]:
+        """List tools from all connected servers."""
+        tools = []
+
+        async with self.lock:
+            servers_snapshot = dict(self.servers)
+
+        for name, instance in servers_snapshot.items():
+            if instance["status"] != "connected" or not instance.get("client"):
+                continue
+
+            try:
+                client = instance["client"]
+                server_tools = await client.list_tools()
+                for tool in server_tools:
+                    raw_name = tool.get("name", "")
+                    tools.append({
+                        **tool,
+                        "name": f"{name}::{raw_name}",
+                        "raw_name": raw_name,
+                        "server": name,
+                    })
+            except Exception as e:
+                # Mark as error if tool listing fails
+                async with self.lock:
+                    if name in self.servers:
+                        self.servers[name]["status"] = "error"
+                        self.servers[name]["error"] = f"Failed to list tools: {e}"
+                print(f"✗ MCP server '{name}' error: {e}")
+
+        return tools
+
+
+# Global MCP manager instance
+_mcp_manager: Optional[MCPProcessManager] = None
+
+
+def get_mcp_manager() -> MCPProcessManager:
+    """Get or create the global MCP process manager."""
+    global _mcp_manager
+    if _mcp_manager is None:
+        _mcp_manager = MCPProcessManager(PROJECT_ROOT)
+    return _mcp_manager
 
 
 def _get_rag_index():
@@ -414,11 +556,45 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/mcp/tools":
+            manager = get_mcp_manager()
+            # Ensure servers are started even if startup hook was skipped.
+            if not manager.servers:
+                run_async(manager.start_all())
+            tools = run_async(manager.list_all_tools())
+            status = run_async(manager.get_status())
+
             _json_response(
                 self,
                 HTTPStatus.OK,
-                {"tools": _list_mcp_tools(), "servers": list(_available_mcp_entries().keys())},
+                {
+                    "tools": tools,
+                    "servers": list(status.keys()),
+                    "status": status,
+                },
             )
+            return
+
+        if self.path == "/api/mcp/status":
+            manager = get_mcp_manager()
+            status = run_async(manager.get_status())
+            _json_response(self, HTTPStatus.OK, {"servers": status})
+            return
+
+        # Support API endpoints
+        if self.path == "/api/support/tickets":
+            tickets_data = _load_support_tickets(PROJECT_ROOT)
+            _json_response(self, HTTPStatus.OK, tickets_data)
+            return
+
+        if self.path.startswith("/api/support/ticket/"):
+            ticket_id = self.path.split("/")[-1]
+            ticket_data = _get_support_ticket(PROJECT_ROOT, ticket_id)
+            _json_response(self, HTTPStatus.OK, ticket_data)
+            return
+
+        if self.path == "/api/support/faq":
+            faq_data = _load_support_faq(PROJECT_ROOT)
+            _json_response(self, HTTPStatus.OK, faq_data)
             return
 
         if self.path in ("/", "/index.html"):
@@ -440,6 +616,24 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
         if self.path == "/api/rag/index":
             status = _start_rag_indexing()
             _json_response(self, HTTPStatus.OK, {"status": status})
+            return
+
+        if self.path == "/api/mcp/restart":
+            payload = _read_json(self)
+            server_name = payload.get("server")
+
+            if not server_name:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Server name required"})
+                return
+
+            manager = get_mcp_manager()
+
+            async def restart_server():
+                await manager.stop_server(server_name)
+                await manager.start_server(server_name)
+
+            run_async(restart_server())
+            _json_response(self, HTTPStatus.OK, {"status": "restarted", "server": server_name})
             return
 
         if self.path == "/api/mcp/call":
@@ -590,10 +784,57 @@ def _fetch_ollama_models(base_url: str) -> List[str]:
     return models
 
 
+def _load_support_tickets(project_root: str) -> Dict[str, Any]:
+    """Load tickets from support directory."""
+    path = Path(project_root) / "progect_assistant" / "support" / "tickets.json"
+    if not path.exists():
+        return {"tickets": []}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, IOError):
+        return {"tickets": []}
+
+
+def _get_support_ticket(project_root: str, ticket_id: str) -> Dict[str, Any]:
+    """Get single ticket by ID."""
+    data = _load_support_tickets(project_root)
+    for ticket in data.get("tickets", []):
+        if ticket.get("ticket_id") == ticket_id:
+            return {"ticket": ticket}
+    return {"error": "Ticket not found"}
+
+
+def _load_support_faq(project_root: str) -> Dict[str, Any]:
+    """Load FAQ from support directory."""
+    path = Path(project_root) / "progect_assistant" / "support" / "faq.json"
+    if not path.exists():
+        return {"faqs": []}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, IOError):
+        return {"faqs": []}
+
+
 def main() -> None:
+    # Initialize and start MCP manager
+    manager = get_mcp_manager()
+
+    async def startup():
+        await manager.start_all()
+
+    # Start MCP servers before web server
+    asyncio.run(startup())
+
+    # Start web server
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), AssistantWebHandler)
     print(f"Assistant Web UI running on http://{DEFAULT_HOST}:{DEFAULT_PORT}")
-    server.serve_forever()
+
+    try:
+        server.serve_forever()
+    finally:
+        # Cleanup on shutdown
+        print("\nShutting down MCP servers...")
+        asyncio.run(manager.stop_all())
 
 
 if __name__ == "__main__":

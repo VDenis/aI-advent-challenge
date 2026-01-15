@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Any, Dict
 
-from .tools import ToolContext, ToolRegistry
+from .registry import ToolContext, ToolRegistry
 
 
 class ToolExecutionError(Exception):

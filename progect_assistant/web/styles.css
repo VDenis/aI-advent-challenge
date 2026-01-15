@@ -322,6 +322,86 @@ input[data-has-env-key="true"]::placeholder {
   margin-bottom: 12px;
 }
 
+/* MCP Server Status */
+.mcp-servers-status {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+}
+
+.server-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.server-name {
+  font-weight: 600;
+  min-width: 90px;
+  color: var(--accent-2);
+  font-size: 0.9rem;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.status-dot.connected {
+  background: #4ade80;
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.6);
+}
+
+.status-dot.disconnected {
+  background: #f87171;
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.6);
+}
+
+.status-dot.starting {
+  background: #fbbf24;
+  animation: pulse-status 1.5s ease-in-out infinite;
+}
+
+.status-text {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.restart-btn {
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  color: var(--accent-2);
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.restart-btn:hover {
+  background: #f0e8dc;
+  color: var(--accent);
+  transform: none;
+}
+
+@keyframes pulse-status {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
 .tool-list {
   display: grid;
   gap: 10px;
