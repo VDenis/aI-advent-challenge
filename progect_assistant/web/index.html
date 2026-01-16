@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Developer Assistant UI</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   </head>
   <body>
     <div class="glow" aria-hidden="true"></div>
@@ -31,6 +33,12 @@
           <summary>Last RAG context</summary>
           <pre id="ragContextText">No RAG context used yet.</pre>
         </details>
+        <details id="issuesPanel" class="issue-panel">
+          <summary>GitHub issues (this session)</summary>
+          <div id="issueList" class="issue-list">
+            <p class="note">No issues created yet.</p>
+          </div>
+        </details>
         <form id="chatForm" class="chat-form">
           <textarea id="chatInput" rows="3" placeholder="Ask about the repo or call a tool..." required></textarea>
           <button type="submit">Send</button>
@@ -45,7 +53,7 @@
           <label for="provider">Provider</label>
           <select id="provider">
             <option value="ollama">Ollama (OpenAI API)</option>
-            <option value="huggingface">Hugging Face</option>
+            <option value="huggingface" selected>Hugging Face</option>
           </select>
         </div>
         <div class="field">

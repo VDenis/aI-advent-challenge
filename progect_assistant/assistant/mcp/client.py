@@ -150,5 +150,31 @@ class MCPStdioClient:
         await self._proc.wait()
 
 
+_SHARED_LOOP: Optional[asyncio.AbstractEventLoop] = None
+_LOOP_THREAD: Optional["threading.Thread"] = None
+
+
+def _get_shared_loop() -> asyncio.AbstractEventLoop:
+    """Get or create a shared event loop running in a background thread."""
+    global _SHARED_LOOP, _LOOP_THREAD
+    import threading
+
+    if _SHARED_LOOP is not None and _SHARED_LOOP.is_running():
+        return _SHARED_LOOP
+
+    _SHARED_LOOP = asyncio.new_event_loop()
+
+    def run_loop():
+        asyncio.set_event_loop(_SHARED_LOOP)
+        _SHARED_LOOP.run_forever()
+
+    _LOOP_THREAD = threading.Thread(target=run_loop, daemon=True)
+    _LOOP_THREAD.start()
+    return _SHARED_LOOP
+
+
 def run_async(coro: Any) -> Any:
-    return asyncio.run(coro)
+    """Run coroutine in the shared event loop (thread-safe)."""
+    loop = _get_shared_loop()
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=60)

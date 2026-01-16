@@ -1,13 +1,15 @@
 {
   "mcpServers": {
     "developer-assistant": {
-      "command": "python",
+      "command": "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
       "args": [
         "-m",
         "progect_assistant.mcp_server"
       ],
+      "cwd": "/Users/denis/code/ai_challenge/aI-advent-challenge",
       "env": {
-        "PROJECT_ROOT": "/Users/denis/code/ai_challenge/aI-advent-challenge"
+        "PROJECT_ROOT": "/Users/denis/code/ai_challenge/aI-advent-challenge",
+        "PYTHONPATH": "/Users/denis/code/ai_challenge/aI-advent-challenge"
       }
     }
   }

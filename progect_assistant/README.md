@@ -29,6 +29,10 @@
 - `ASSISTANT_LOG_PATH` (по умолчанию `progect_assistant/logs/assistant.log`)
 - `MCP_CONFIG_PATH` (по умолчанию `progect_assistant/mcp_config.json`)
 - `GIT_MCP_COMMAND` (fallback для запуска git MCP из JSON)
+- `GITHUB_TOKEN` (токен для GitHub Issues)
+- `GITHUB_OWNER`/`GITHUB_REPO` или `GITHUB_REPOSITORY` (репозиторий для Issues)
+- `GITHUB_API_BASE` (по умолчанию `https://api.github.com`)
+- `GITHUB_DEFAULT_LABELS` (labels по умолчанию через запятую)
 
 ## Структура
 - `progect_assistant/main.py` — CLI вход.
@@ -60,3 +64,10 @@
 ## Notes
 - Git инструменты идут через MCP-адаптер, его можно заменить на реальный MCP клиент.
 - Ассистент не придумывает детали проекта: если нет источников — говорит об этом.
+
+## GitHub Issues
+Создание Issue доступно через `POST /api/github/create-issue` (в `progect_assistant/web_server.py`).
+Payload строится из `user_query` и `assistant_answer`, при необходимости можно добавить `rag_context`,
+`labels`, `findings` или `metadata`. Для MCP есть инструмент `create_github_issue`
+в `progect_assistant/mcp_server.py` (использует `GITHUB_TOKEN` и `GITHUB_OWNER`/`GITHUB_REPO` или
+`GITHUB_REPOSITORY` из окружения).

@@ -13,6 +13,14 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
+from dotenv import load_dotenv
+from progect_assistant.assistant.github import (
+    DEFAULT_GITHUB_API_BASE,
+    DEFAULT_GITHUB_LABELS,
+    GitHubClient,
+    GitHubError,
+    format_issue_from_conversation,
+)
 from progect_assistant.assistant.llm import LLMError, openai_chat_completion
 from progect_assistant.assistant.mcp import (
     MCPStdioClient,
@@ -21,10 +29,15 @@ from progect_assistant.assistant.mcp import (
     run_async,
 )
 from progect_assistant.assistant.rag import RagIndexer, RagSearch
+# New Code RAG (hybrid search + AST chunking)
+from progect_assistant.assistant.rag import CodeRAG, RetrievalResult
 
 
 PROJECT_ROOT = os.environ.get("PROJECT_ROOT", os.getcwd())
 WEB_ROOT = Path(PROJECT_ROOT) / "progect_assistant" / "web"
+
+# Load environment from .env if present (helps when running web server directly)
+load_dotenv(dotenv_path=Path(PROJECT_ROOT) / ".env", override=False)
 
 DEFAULT_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "openai/gpt-oss-20b:groq")
@@ -53,6 +66,143 @@ _RAG_STATUS: Dict[str, Any] = {
     "error": "",
 }
 _RAG_THREAD: Optional[threading.Thread] = None
+
+# ============================================================================
+# NEW CODE RAG (Hybrid Search + AST Chunking)
+# ============================================================================
+_CODE_RAG_LOCK = threading.Lock()
+_CODE_RAG: Optional[CodeRAG] = None
+_CODE_RAG_STATUS: Dict[str, Any] = {
+    "state": "idle",
+    "total_files": 0,
+    "processed_files": 0,
+    "current_file": "",
+    "chunks": 0,
+    "error": "",
+    "embedding_progress": 0,
+}
+_CODE_RAG_THREAD: Optional[threading.Thread] = None
+
+# Environment variable to enable new Code RAG (default: True)
+USE_CODE_RAG = os.environ.get("USE_CODE_RAG", "true").lower() in ("true", "1", "yes")
+CODE_RAG_EMBEDDING_PROVIDER = os.environ.get("CODE_RAG_EMBEDDING_PROVIDER", "ollama")
+CODE_RAG_EMBEDDING_MODEL = os.environ.get("CODE_RAG_EMBEDDING_MODEL", "nomic-embed-text")
+CODE_RAG_USE_RERANKER = os.environ.get("CODE_RAG_USE_RERANKER", "false").lower() in ("true", "1", "yes")
+
+
+def _get_code_rag() -> Optional[CodeRAG]:
+    """Get or create Code RAG instance."""
+    global _CODE_RAG
+    if not USE_CODE_RAG:
+        return None
+
+    with _CODE_RAG_LOCK:
+        if _CODE_RAG is None:
+            try:
+                _CODE_RAG = CodeRAG(
+                    project_root=Path(PROJECT_ROOT),
+                    embedding_provider=CODE_RAG_EMBEDDING_PROVIDER,
+                    embedding_model=CODE_RAG_EMBEDDING_MODEL,
+                    use_reranker=CODE_RAG_USE_RERANKER,
+                )
+                # Try to load existing index
+                if _CODE_RAG.index_path.exists():
+                    _ = _CODE_RAG.retriever  # This triggers loading
+                    print(f"✓ Code RAG loaded ({len(_CODE_RAG.retriever.chunks)} chunks)")
+            except Exception as e:
+                print(f"✗ Code RAG init failed: {e}")
+                _CODE_RAG = None
+        return _CODE_RAG
+
+
+def _get_code_rag_status() -> Dict[str, Any]:
+    """Get Code RAG indexing status."""
+    with _CODE_RAG_LOCK:
+        status = dict(_CODE_RAG_STATUS)
+        rag = _CODE_RAG
+        if rag and rag.retriever.chunks:
+            status["chunks"] = len(rag.retriever.chunks)
+            status["files"] = len(set(c.file_path for c in rag.retriever.chunks.values()))
+        return status
+
+
+def _set_code_rag_status(**updates: Any) -> None:
+    """Update Code RAG status."""
+    with _CODE_RAG_LOCK:
+        _CODE_RAG_STATUS.update(updates)
+
+
+def _code_rag_progress_callback(current_file: str, processed: int, total: int) -> None:
+    """Progress callback for Code RAG indexing."""
+    _set_code_rag_status(
+        current_file=current_file,
+        processed_files=processed,
+        total_files=total,
+    )
+
+
+def _run_code_rag_indexing() -> None:
+    """Run Code RAG indexing in background thread."""
+    global _CODE_RAG
+    try:
+        _set_code_rag_status(state="running", error="", chunks=0)
+
+        rag = CodeRAG(
+            project_root=Path(PROJECT_ROOT),
+            embedding_provider=CODE_RAG_EMBEDDING_PROVIDER,
+            embedding_model=CODE_RAG_EMBEDDING_MODEL,
+            use_reranker=CODE_RAG_USE_RERANKER,
+        )
+
+        count = rag.build_index(progress_callback=_code_rag_progress_callback)
+
+        with _CODE_RAG_LOCK:
+            _CODE_RAG = rag
+
+        _set_code_rag_status(state="done", chunks=count, current_file="")
+        print(f"✓ Code RAG indexed {count} chunks")
+
+    except Exception as e:
+        _set_code_rag_status(state="error", error=str(e), current_file="")
+        print(f"✗ Code RAG indexing failed: {e}")
+
+
+def _start_code_rag_indexing() -> Dict[str, Any]:
+    """Start Code RAG indexing in background."""
+    global _CODE_RAG_THREAD
+    with _CODE_RAG_LOCK:
+        if _CODE_RAG_THREAD and _CODE_RAG_THREAD.is_alive():
+            return dict(_CODE_RAG_STATUS)
+
+        _CODE_RAG_STATUS.update({
+            "state": "running",
+            "total_files": 0,
+            "processed_files": 0,
+            "current_file": "",
+            "chunks": 0,
+            "error": "",
+        })
+
+        _CODE_RAG_THREAD = threading.Thread(target=_run_code_rag_indexing, daemon=True)
+        _CODE_RAG_THREAD.start()
+        return dict(_CODE_RAG_STATUS)
+
+
+def _build_code_rag_context(query: str, top_k: int = 10) -> str:
+    """Build context using new Code RAG with hybrid search."""
+    rag = _get_code_rag()
+    if not rag or not rag.retriever.chunks:
+        return ""
+
+    try:
+        results = rag.search(query, top_k=top_k, rerank=CODE_RAG_USE_RERANKER)
+        if not results:
+            return ""
+
+        return rag.get_context(results, query=query, max_tokens=8000)
+    except Exception as e:
+        print(f"Code RAG search error: {e}")
+        return ""
 
 
 class MCPProcessManager:
@@ -277,8 +427,17 @@ def _extract_last_user_message(messages: List[Dict[str, Any]]) -> str:
 
 
 def _build_rag_context(query: str, top_k: int) -> str:
+    """Build RAG context - uses Code RAG if available, falls back to legacy."""
     if not query:
         return ""
+
+    # Try new Code RAG first (hybrid search)
+    if USE_CODE_RAG:
+        code_rag_context = _build_code_rag_context(query, top_k=top_k)
+        if code_rag_context:
+            return code_rag_context
+
+    # Fallback to legacy TF-IDF RAG
     index = _get_rag_index()
     searcher = RagSearch(index)
     results = searcher.search(query, top_k=top_k)
@@ -317,6 +476,33 @@ def _inject_rag_context(messages: List[Dict[str, Any]], context: str) -> List[Di
     return [{"role": "system", "content": RAG_SYSTEM_PROMPT}, *new_messages]
 
 
+def _find_create_issue_tools(mcp_tools: List[Dict[str, Any]]) -> List[str]:
+    """Return fully qualified names for GitHub issue tools."""
+    issue_tools: List[str] = []
+    for tool in mcp_tools:
+        raw_name = tool.get("raw_name") or tool.get("name") or ""
+        qualified = tool.get("name") or raw_name
+        if "create_github_issue" in raw_name or "create_github_issue" in qualified:
+            issue_tools.append(str(qualified))
+    return issue_tools
+
+
+def _inject_mcp_guidance(messages: List[Dict[str, Any]], mcp_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Prepend guidance so the model knows how to use MCP tools for GitHub tasks."""
+    issue_tools = _find_create_issue_tools(mcp_tools)
+    if not issue_tools:
+        return messages
+
+    tools_text = ", ".join(issue_tools)
+    guidance = (
+        "You can call MCP tools to take real actions. "
+        "When the user asks to create a task/issue, call the GitHub issue tool "
+        f"({tools_text}) with user_query (original ask) and assistant_answer (your summary). "
+        "Always return the created issue number and URL to the user."
+    )
+    return [{"role": "system", "content": guidance}, *messages]
+
+
 def _mask_api_key(key: str) -> str:
     """Mask API key for display, showing only first 3 and last 4 chars."""
     if not key or len(key) < 8:
@@ -344,6 +530,52 @@ def _read_json(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
         return json.loads(data)
     except json.JSONDecodeError:
         return {}
+
+
+def _parse_label_list(value: Any) -> Optional[List[str]]:
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return None
+
+
+def _default_github_labels() -> List[str]:
+    raw = os.environ.get("GITHUB_DEFAULT_LABELS", "").strip()
+    if raw:
+        parsed = _parse_label_list(raw)
+        return parsed or []
+    return list(DEFAULT_GITHUB_LABELS)
+
+
+def _resolve_github_repo(payload: Dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
+    owner = payload.get("owner")
+    repo = payload.get("repo")
+    repository = payload.get("repository") or os.environ.get("GITHUB_REPOSITORY", "")
+    if repository and (not owner or not repo):
+        if "/" in repository:
+            repo_owner, repo_name = repository.split("/", 1)
+            owner = owner or repo_owner
+            repo = repo or repo_name
+
+    owner = owner or os.environ.get("GITHUB_OWNER")
+    repo = repo or os.environ.get("GITHUB_REPO")
+
+    return (str(owner) if owner else None), (str(repo) if repo else None)
+
+
+def _github_status_from_error(status_code: Optional[int]) -> HTTPStatus:
+    if status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+        return HTTPStatus.UNAUTHORIZED
+    if status_code == HTTPStatus.NOT_FOUND:
+        return HTTPStatus.NOT_FOUND
+    if status_code == HTTPStatus.UNPROCESSABLE_ENTITY:
+        return HTTPStatus.UNPROCESSABLE_ENTITY
+    if status_code is not None and 400 <= status_code < 500:
+        return HTTPStatus.BAD_REQUEST
+    return HTTPStatus.BAD_GATEWAY
 
 
 def _available_mcp_entries() -> Dict[str, Dict[str, Any]]:
@@ -419,13 +651,24 @@ async def _call_mcp_tool_async(
     servers = list(entries.keys())
     server_name, tool_name = _split_tool_name(name, server, servers)
     if not server_name:
-        return {"error": "No MCP servers are configured."}
+        return {"error": "No MCP servers are configured.", "success": False}
     client = _load_mcp_client(server_name)
     if not client:
-        return {"error": f"MCP server '{server_name}' is not configured."}
+        return {"error": f"MCP server '{server_name}' is not configured.", "success": False}
     try:
         result = await client.call_tool(tool_name, arguments)
+        # Check if result contains an error from MCP server
+        if isinstance(result, dict) and result.get("error"):
+            print(f"✗ MCP tool '{name}' returned error: {result.get('error')}")
+            result["success"] = False
+            return result
+        # Mark successful calls explicitly
+        if isinstance(result, dict):
+            result["success"] = True
         return result
+    except Exception as e:
+        print(f"✗ MCP tool '{name}' call failed: {e}")
+        return {"error": str(e), "success": False}
     finally:
         await client.close()
 
@@ -452,6 +695,32 @@ def _format_openai_tools(mcp_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]
             }
         )
     return formatted
+
+
+def _extract_issue_results(tool_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Collect GitHub issue results from MCP tool responses."""
+    issues: List[Dict[str, Any]] = []
+    for entry in tool_results:
+        name = str(entry.get("name", ""))
+        result = entry.get("result")
+        if "create_github_issue" not in name:
+            continue
+        if not isinstance(result, dict):
+            issues.append({"name": name, "success": False, "error": "No issue details returned"})
+            continue
+        success = result.get("success", True)
+        issue = {
+            "name": name,
+            "success": bool(success),
+            "number": result.get("number"),
+            "title": result.get("title"),
+            "url": result.get("url") or result.get("html_url"),
+            "labels": result.get("labels") if isinstance(result.get("labels"), list) else [],
+        }
+        if not success:
+            issue["error"] = result.get("error") or "Issue creation failed"
+        issues.append(issue)
+    return issues
 
 
 def _extract_openai_message(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -516,7 +785,13 @@ def _run_openai_with_mcp(
         messages=[*messages, message, *tool_messages],
     )
     follow_up_message = _extract_openai_message(follow_up)
-    return {"message": follow_up_message, "tool_calls": tool_calls, "tool_results": tool_results}
+    issues = _extract_issue_results(tool_results)
+    return {
+        "message": follow_up_message,
+        "tool_calls": tool_calls,
+        "tool_results": tool_results,
+        "issues": issues,
+    }
 
 
 class AssistantWebHandler(BaseHTTPRequestHandler):
@@ -524,6 +799,19 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
         if self.path == "/api/config":
             hf_key = os.environ.get("HF_API_KEY", "")
             ollama_key = os.environ.get("OLLAMA_API_KEY", "")
+
+            # Get Code RAG stats
+            code_rag_stats = {"enabled": False, "chunks": 0}
+            if USE_CODE_RAG:
+                rag = _get_code_rag()
+                code_rag_stats = {
+                    "enabled": True,
+                    "provider": CODE_RAG_EMBEDDING_PROVIDER,
+                    "model": CODE_RAG_EMBEDDING_MODEL,
+                    "reranker": CODE_RAG_USE_RERANKER,
+                    "chunks": len(rag.retriever.chunks) if rag and rag.retriever.chunks else 0,
+                    "ready": bool(rag and rag.retriever.chunks),
+                }
 
             _json_response(
                 self,
@@ -541,12 +829,62 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                         "api_key_masked": _mask_api_key(hf_key),
                         "has_api_key": bool(hf_key),
                     },
+                    "code_rag": code_rag_stats,
                 },
             )
             return
 
         if self.path == "/api/rag/status":
             _json_response(self, HTTPStatus.OK, {"status": _get_rag_status()})
+            return
+
+        # New Code RAG status endpoint
+        if self.path == "/api/code-rag/status":
+            status = _get_code_rag_status()
+            rag = _get_code_rag()
+            if rag:
+                status["stats"] = rag.get_stats()
+                status["enabled"] = True
+                status["provider"] = CODE_RAG_EMBEDDING_PROVIDER
+                status["model"] = CODE_RAG_EMBEDDING_MODEL
+                status["reranker"] = CODE_RAG_USE_RERANKER
+            else:
+                status["enabled"] = USE_CODE_RAG
+                status["stats"] = {"status": "not_initialized"}
+            _json_response(self, HTTPStatus.OK, {"status": status})
+            return
+
+        # Code RAG search endpoint (for testing)
+        if self.path.startswith("/api/code-rag/search"):
+            query = self._query_param("q") or ""
+            top_k = int(self._query_param("top_k") or "10")
+            if not query:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Query parameter 'q' required"})
+                return
+
+            rag = _get_code_rag()
+            if not rag:
+                _json_response(self, HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Code RAG not available"})
+                return
+
+            try:
+                results = rag.search(query, top_k=top_k)
+                response_results = []
+                for r in results:
+                    response_results.append({
+                        "file_path": r.chunk.file_path,
+                        "name": r.chunk.name,
+                        "chunk_type": r.chunk.chunk_type,
+                        "start_line": r.chunk.start_line,
+                        "end_line": r.chunk.end_line,
+                        "score": r.final_score,
+                        "dense_score": r.dense_score,
+                        "sparse_score": r.sparse_score,
+                        "text_preview": r.chunk.text[:200] + "..." if len(r.chunk.text) > 200 else r.chunk.text,
+                    })
+                _json_response(self, HTTPStatus.OK, {"query": query, "results": response_results})
+            except Exception as e:
+                _json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": str(e)})
             return
 
         if self.path.startswith("/api/ollama/models"):
@@ -618,6 +956,15 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
             _json_response(self, HTTPStatus.OK, {"status": status})
             return
 
+        # New Code RAG indexing endpoint
+        if self.path == "/api/code-rag/index":
+            if not USE_CODE_RAG:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Code RAG is disabled. Set USE_CODE_RAG=true"})
+                return
+            status = _start_code_rag_indexing()
+            _json_response(self, HTTPStatus.OK, {"status": status})
+            return
+
         if self.path == "/api/mcp/restart":
             payload = _read_json(self)
             server_name = payload.get("server")
@@ -650,7 +997,7 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/chat":
             payload = _read_json(self)
-            provider = payload.get("provider", "ollama")
+            provider = payload.get("provider", "huggingface")
             model = payload.get("model") or (DEFAULT_OLLAMA_MODEL if provider == "ollama" else DEFAULT_HF_MODEL)
             messages = payload.get("messages") or []
             if not messages and payload.get("message"):
@@ -679,11 +1026,12 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                     api_key = payload.get("api_key") or os.environ.get("OLLAMA_API_KEY")
                     if use_mcp:
                         mcp_tools = _list_mcp_tools()
+                        messages_with_guidance = _inject_mcp_guidance(messages, mcp_tools)
                         response = _run_openai_with_mcp(
                             base_url=base_url,
                             api_key=api_key,
                             model=model,
-                            messages=messages,
+                            messages=messages_with_guidance,
                             mcp_tools=mcp_tools,
                         )
                         response["rag_context"] = rag_context
@@ -711,11 +1059,12 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                         return
                     if use_mcp:
                         mcp_tools = _list_mcp_tools()
+                        messages_with_guidance = _inject_mcp_guidance(messages, mcp_tools)
                         response = _run_openai_with_mcp(
                             base_url=base_url,
                             api_key=api_key,
                             model=model,
-                            messages=messages,
+                            messages=messages_with_guidance,
                             mcp_tools=mcp_tools,
                         )
                         response["rag_context"] = rag_context
@@ -738,6 +1087,68 @@ class AssistantWebHandler(BaseHTTPRequestHandler):
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": f"Unknown provider: {provider}"})
             except LLMError as exc:
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            return
+
+        if self.path == "/api/github/create-issue":
+            payload = _read_json(self)
+            token = os.environ.get("GITHUB_TOKEN", "")
+            if not token:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "GITHUB_TOKEN is required."})
+                return
+
+            owner, repo = _resolve_github_repo(payload)
+            if not owner or not repo:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "GitHub owner/repo is required."})
+                return
+
+            user_query = str(payload.get("user_query", "")).strip()
+            assistant_answer = str(payload.get("assistant_answer", "")).strip()
+            if not user_query or not assistant_answer:
+                _json_response(
+                    self,
+                    HTTPStatus.BAD_REQUEST,
+                    {"error": "user_query and assistant_answer are required."},
+                )
+                return
+
+            labels = _parse_label_list(payload.get("labels"))
+            default_labels = _default_github_labels()
+            findings = payload.get("findings")
+            if not isinstance(findings, list):
+                findings = None
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None
+
+            issue_payload = format_issue_from_conversation(
+                user_query=user_query,
+                assistant_answer=assistant_answer,
+                rag_context=payload.get("rag_context"),
+                findings=findings,
+                title=payload.get("title"),
+                labels=labels,
+                default_labels=default_labels,
+                metadata=metadata,
+            )
+
+            base_url = payload.get("base_url") or os.environ.get("GITHUB_API_BASE") or DEFAULT_GITHUB_API_BASE
+            client = GitHubClient(token=token, base_url=base_url)
+            try:
+                issue = client.create_issue(owner=owner, repo=repo, **issue_payload)
+            except GitHubError as exc:
+                status = _github_status_from_error(exc.status_code)
+                _json_response(self, status, {"error": str(exc), "details": exc.payload})
+                return
+
+            result = {
+                "number": issue.get("number"),
+                "title": issue.get("title"),
+                "url": issue.get("html_url"),
+                "labels": [
+                    label.get("name")
+                    for label in issue.get("labels", [])
+                    if isinstance(label, dict) and label.get("name")
+                ],
+            }
+            _json_response(self, HTTPStatus.OK, {"issue": result})
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
@@ -819,11 +1230,8 @@ def main() -> None:
     # Initialize and start MCP manager
     manager = get_mcp_manager()
 
-    async def startup():
-        await manager.start_all()
-
-    # Start MCP servers before web server
-    asyncio.run(startup())
+    # Start MCP servers using shared event loop (thread-safe)
+    run_async(manager.start_all())
 
     # Start web server
     server = ThreadingHTTPServer((DEFAULT_HOST, DEFAULT_PORT), AssistantWebHandler)
@@ -834,7 +1242,7 @@ def main() -> None:
     finally:
         # Cleanup on shutdown
         print("\nShutting down MCP servers...")
-        asyncio.run(manager.stop_all())
+        run_async(manager.stop_all())
 
 
 if __name__ == "__main__":

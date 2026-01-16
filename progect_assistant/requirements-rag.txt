@@ -1,0 +1,24 @@
+# Code RAG Dependencies
+# =====================
+# Install with: pip install -r requirements-rag.txt
+
+# Core
+numpy>=1.24.0
+
+# AST Parsing (for smart chunking)
+tree-sitter>=0.21.0
+tree-sitter-python>=0.21.0
+tree-sitter-javascript>=0.21.0
+
+# Embeddings (choose one or more)
+sentence-transformers>=2.2.0  # For HuggingFace embeddings + reranker
+
+# Vector Store (optional - for production)
+# qdrant-client>=1.7.0  # Uncomment for Qdrant support
+
+# API clients (optional)
+# openai>=1.0.0  # Uncomment for OpenAI embeddings
+# cohere>=4.0.0  # Uncomment for Cohere reranker
+
+# Note: Ollama embeddings require running Ollama server locally
+# No additional pip packages needed for Ollama

@@ -149,6 +149,79 @@ h1 {
   font-size: 0.8rem;
 }
 
+.issue-panel {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--stroke);
+  background: #e9f4f4;
+}
+
+.issue-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent-2);
+}
+
+.issue-list {
+  margin: 10px 0 0;
+  display: grid;
+  gap: 10px;
+}
+
+.issue-card {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 12px;
+  background: #fff;
+  box-shadow: 0 8px 20px -16px var(--shadow);
+}
+
+.issue-card-error {
+  border-color: #f4b7b7;
+  background: #fff3f3;
+}
+
+.issue-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.issue-title {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.issue-meta {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.issue-tool {
+  margin-top: 6px;
+  font-size: 0.85rem;
+  color: var(--accent-2);
+}
+
+.issue-link {
+  font-weight: 600;
+  color: var(--accent-2);
+  text-decoration: none;
+}
+
+.issue-link:hover {
+  text-decoration: underline;
+}
+
+.issue-error {
+  margin-top: 8px;
+  color: #c62828;
+  font-size: 0.9rem;
+}
+
 .message {
   padding: 14px 16px;
   border-radius: 16px;
@@ -163,12 +236,141 @@ h1 {
   border-color: #cbe0e3;
 }
 
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
 .message .role {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
   color: var(--muted);
-  margin-bottom: 6px;
+}
+
+.copy-btn {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.message:hover .copy-btn {
+  opacity: 1;
+}
+
+/* Markdown content styling */
+.message-body {
+  line-height: 1.6;
+}
+
+.message-body p {
+  margin: 0 0 0.8em;
+}
+
+.message-body p:last-child {
+  margin-bottom: 0;
+}
+
+.message-body strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.message-body em {
+  font-style: italic;
+}
+
+.message-body ul,
+.message-body ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.message-body li {
+  margin-bottom: 0.3em;
+}
+
+.message-body code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 0.9em;
+}
+
+.message.assistant .message-body code {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.message-body pre {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 12px 14px;
+  border-radius: 10px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+
+.message-body pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  color: inherit;
+}
+
+.message-body blockquote {
+  margin: 0.8em 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  background: rgba(196, 111, 42, 0.08);
+  border-radius: 0 8px 8px 0;
+}
+
+.message-body h1,
+.message-body h2,
+.message-body h3,
+.message-body h4 {
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+}
+
+.message-body h1:first-child,
+.message-body h2:first-child,
+.message-body h3:first-child {
+  margin-top: 0;
+}
+
+.message-body a {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+
+.message-body hr {
+  border: none;
+  border-top: 1px solid var(--stroke);
+  margin: 1em 0;
+}
+
+.message-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 0.9em;
+}
+
+.message-body th,
+.message-body td {
+  border: 1px solid var(--stroke);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.message-body th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
 }
 
 .chat-form {

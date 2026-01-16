@@ -37,25 +37,168 @@ const commentInput = document.getElementById("commentInput");
 const backToListBtn = document.getElementById("backToList");
 const statusFilter = document.getElementById("statusFilter");
 const createTicketBtn = document.getElementById("createTicketBtn");
+const issuesPanel = document.getElementById("issuesPanel");
+const issueList = document.getElementById("issueList");
 
 let messages = [];
 let currentTicket = null;
 let defaultConfig = {};
 let isHfKeyOverridden = false;
 let ragPollTimer = null;
+let createdIssues = [];
 
 const showMessage = (role, content) => {
   const wrapper = document.createElement("div");
   wrapper.className = `message ${role}`;
+
+  // Header with role label and copy button
+  const header = document.createElement("div");
+  header.className = "message-header";
+
   const roleLabel = document.createElement("div");
   roleLabel.className = "role";
   roleLabel.textContent = role === "assistant" ? "assistant" : "you";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "copy-btn ghost small";
+  copyBtn.textContent = "Copy";
+  copyBtn.title = "Copy raw text without formatting";
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(content).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1500);
+    });
+  };
+
+  header.appendChild(roleLabel);
+  header.appendChild(copyBtn);
+
+  // Body with rendered markdown
   const body = document.createElement("div");
-  body.textContent = content;
-  wrapper.appendChild(roleLabel);
+  body.className = "message-body";
+
+  if (role === "assistant" && typeof marked !== "undefined") {
+    // Configure marked for safe rendering
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+    });
+    // Sanitize HTML with DOMPurify to prevent XSS
+    const rawHtml = marked.parse(content);
+    const sanitizedHtml = typeof DOMPurify !== "undefined"
+      ? DOMPurify.sanitize(rawHtml)
+      : content;
+    body.innerHTML = sanitizedHtml;
+  } else {
+    body.textContent = content;
+  }
+
+  wrapper.appendChild(header);
   wrapper.appendChild(body);
   chatLog.appendChild(wrapper);
   chatLog.scrollTop = chatLog.scrollHeight;
+};
+
+const renderIssues = () => {
+  if (!issueList) return;
+  issueList.innerHTML = "";
+  if (!createdIssues.length) {
+    issueList.innerHTML = "<p class='note'>No issues created yet.</p>";
+    return;
+  }
+
+  createdIssues.forEach((issue) => {
+    const card = document.createElement("div");
+    card.className = `issue-card${issue.success === false ? " issue-card-error" : ""}`;
+
+    const header = document.createElement("div");
+    header.className = "issue-header";
+
+    const info = document.createElement("div");
+    const title = document.createElement("div");
+    title.className = "issue-title";
+    title.textContent = issue.title || "GitHub issue";
+    info.appendChild(title);
+
+    const metaParts = [];
+    if (issue.number) metaParts.push(`#${issue.number}`);
+    const labels = Array.isArray(issue.labels) ? issue.labels.filter(Boolean) : [];
+    if (labels.length) metaParts.push(labels.join(", "));
+    if (metaParts.length) {
+      const meta = document.createElement("div");
+      meta.className = "issue-meta";
+      meta.textContent = metaParts.join(" · ");
+      info.appendChild(meta);
+    }
+
+    if (issue.name) {
+      const tool = document.createElement("div");
+      tool.className = "issue-tool";
+      tool.textContent = issue.name;
+      info.appendChild(tool);
+    }
+
+    header.appendChild(info);
+
+    if (issue.url) {
+      const link = document.createElement("a");
+      link.className = "issue-link";
+      link.href = issue.url;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Open ↗";
+      header.appendChild(link);
+    }
+
+    card.appendChild(header);
+
+    if (issue.success === false) {
+      const error = document.createElement("div");
+      error.className = "issue-error";
+      error.textContent = issue.error || "Issue creation failed.";
+      card.appendChild(error);
+    }
+
+    issueList.appendChild(card);
+  });
+
+  if (issuesPanel) {
+    issuesPanel.open = true;
+  }
+};
+
+const upsertIssues = (issues = []) => {
+  issues.forEach((issue) => {
+    const existingIdx = createdIssues.findIndex(
+      (item) => (issue.url && item.url === issue.url) || (issue.number && item.number === issue.number)
+    );
+    if (existingIdx >= 0) {
+      createdIssues[existingIdx] = { ...createdIssues[existingIdx], ...issue };
+    } else {
+      createdIssues.unshift(issue);
+    }
+  });
+  createdIssues = createdIssues.slice(0, 10);
+  renderIssues();
+};
+
+const issuesFromToolResults = (toolResults = []) => {
+  const collected = [];
+  toolResults.forEach((item) => {
+    const name = String(item.name || "");
+    if (!name.includes("create_github_issue")) return;
+    const result = item.result || {};
+    collected.push({
+      name,
+      success: result.success !== false,
+      number: result.number,
+      title: result.title,
+      url: result.url || result.html_url,
+      labels: Array.isArray(result.labels) ? result.labels : [],
+      error: result.error,
+    });
+  });
+  return collected;
 };
 
 const fetchConfig = async () => {
@@ -80,10 +223,6 @@ const fetchConfig = async () => {
     overrideHfKeyBtn.style.display = 'none';
   }
 
-  // Auto-load Ollama models on startup if Ollama is selected
-  if (providerSelect.value === "ollama") {
-    await loadOllamaModels();
-  }
 };
 
 const loadOllamaModels = async () => {
@@ -422,11 +561,39 @@ chatForm.addEventListener("submit", async (event) => {
     ragContextPanel.open = true;
   }
 
+  if (data.issues?.length) {
+    upsertIssues(data.issues);
+    const summaryLines = data.issues.map((issue) => {
+      if (issue.success === false) {
+        return `${issue.name || "issue"}: failed (${issue.error || "unknown error"})`;
+      }
+      const num = issue.number ? `#${issue.number}` : "";
+      return `${issue.name || "issue"}: ${num} ${issue.url || ""}`.trim();
+    });
+    showMessage("assistant", `GitHub issues:\n${summaryLines.join("\n")}`);
+  } else if (data.tool_results?.length) {
+    const inferredIssues = issuesFromToolResults(data.tool_results);
+    if (inferredIssues.length) {
+      upsertIssues(inferredIssues);
+      const summaryLines = inferredIssues.map((issue) => {
+        if (issue.success === false) {
+          return `${issue.name || "issue"}: failed (${issue.error || "unknown error"})`;
+        }
+        const num = issue.number ? `#${issue.number}` : "";
+        return `${issue.name || "issue"}: ${num} ${issue.url || ""}`.trim();
+      });
+      showMessage("assistant", `GitHub issues:\n${summaryLines.join("\n")}`);
+    }
+  }
+
   if (data.tool_results?.length) {
     const toolSummary = data.tool_results
+      .filter((item) => !String(item.name || "").includes("create_github_issue"))
       .map((item) => `${item.name}: ${JSON.stringify(item.result).slice(0, 200)}`)
       .join("\n");
-    showMessage("assistant", `Tool results:\n${toolSummary}`);
+    if (toolSummary) {
+      showMessage("assistant", `Tool results:\n${toolSummary}`);
+    }
   }
 });
 
@@ -466,6 +633,15 @@ callToolBtn.addEventListener("click", async () => {
   });
   const data = await response.json();
   toolResult.textContent = JSON.stringify(data.result || data, null, 2);
+
+  const toolResults = [];
+  if (data.result) {
+    toolResults.push({ name, result: data.result });
+  }
+  const inferredIssues = issuesFromToolResults(toolResults);
+  if (inferredIssues.length) {
+    upsertIssues(inferredIssues);
+  }
 });
 
 clearToolResultBtn.addEventListener("click", () => {
@@ -638,7 +814,11 @@ createTicketBtn.addEventListener("click", () => {
 // Initialization
 // ================================
 
-fetchConfig();
-fetchTools();
-updateProviderFields();
-fetchRagStatus();
+const init = async () => {
+  await fetchConfig();
+  await updateProviderFields();
+  fetchTools();
+  fetchRagStatus();
+};
+
+init();
