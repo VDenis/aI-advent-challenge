@@ -103,6 +103,9 @@ class LlamaCppAdapter(BaseLLMAdapter):
         messages: list[Message],
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        top_p: float = 0.9,
+        top_k: int = 40,
+        repeat_penalty: float = 1.1,
     ) -> str:
         """Generate response using llama-cli subprocess."""
         if not Path(self._model_path).exists():
@@ -117,6 +120,9 @@ class LlamaCppAdapter(BaseLLMAdapter):
             "-c", str(self._n_ctx),
             "-n", str(min(max_tokens, self._n_predict)),
             "--temp", str(temperature),
+            "--top-p", str(top_p),
+            "--top-k", str(top_k),
+            "--repeat-penalty", str(repeat_penalty),
             "-p", prompt,
             "--no-display-prompt",
             "-e",

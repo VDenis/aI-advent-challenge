@@ -68,20 +68,12 @@ def split_message(text: str, max_length: int = MAX_MESSAGE_LENGTH) -> list[str]:
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     """Handle /start command."""
-    welcome_text = """👋 Привет! Я бот-ассистент с локальной языковой моделью.
+    welcome_text = """🏠 Привет! Я помощник по недвижимости.
 
-Я работаю на базе Ollama/llama.cpp и могу отвечать на ваши вопросы полностью офлайн (генерация происходит локально).
+Задай вопрос о покупке, продаже или аренде — отвечу кратко и по делу.
 
-📝 **Как пользоваться:**
-Просто напишите мне сообщение, и я отвечу!
-
-⚙️ **Команды:**
-/help — справка по командам
-/reset — очистить историю диалога
-/model — показать текущую модель
-/setmodel <имя> — сменить модель
-
-💡 Примечание: хотя генерация ответов происходит локально, для работы Telegram-бота нужен интернет."""
+/reset — начать заново
+/help — справка"""
 
     await message.answer(welcome_text, parse_mode=ParseMode.MARKDOWN)
 
@@ -89,31 +81,15 @@ async def cmd_start(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     """Handle /help command."""
-    help_text = """📖 **Справка по командам:**
-
-/start — приветствие и краткая инструкция
-/help — эта справка
-/reset — очистить историю диалога (начать заново)
-/model — показать текущую модель и движок
+    help_text = """📖 **Команды:**
+/reset — очистить историю
+/model — текущая модель
 /setmodel <имя> — сменить модель
 
-**Для Ollama:** имя модели, например: `llama3.2`, `mistral`, `gemma2`
-**Для llama.cpp:** путь к GGUF файлу
+🤖 Модель: {model}"""
 
-📊 **Ограничения:**
-• История хранит последние {max_messages} сообщений
-• Максимальная длина ответа: {max_tokens} токенов
-
-🔧 **Движок:** {engine}
-🤖 **Модель:** {model}"""
-
-    if _config and _llm:
-        help_text = help_text.format(
-            max_messages=_config.max_history_messages,
-            max_tokens=_config.max_response_tokens,
-            engine=_llm.engine_name,
-            model=_llm.model_name,
-        )
+    if _llm:
+        help_text = help_text.format(model=_llm.model_name)
 
     await message.answer(help_text, parse_mode=ParseMode.MARKDOWN)
 
@@ -236,6 +212,10 @@ async def handle_message(message: Message) -> None:
         response = await _llm.generate(
             messages=messages,
             max_tokens=_config.max_response_tokens,
+            temperature=_config.llm_temperature,
+            top_p=_config.llm_top_p,
+            top_k=_config.llm_top_k,
+            repeat_penalty=_config.llm_repeat_penalty,
         )
 
         # Save assistant response to history

@@ -64,6 +64,9 @@ class OllamaAdapter(BaseLLMAdapter):
         messages: list[Message],
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        top_p: float = 0.9,
+        top_k: int = 40,
+        repeat_penalty: float = 1.1,
     ) -> str:
         """Generate response using Ollama /api/chat endpoint."""
         client = await self._get_client()
@@ -78,6 +81,9 @@ class OllamaAdapter(BaseLLMAdapter):
             "options": {
                 "num_predict": max_tokens,
                 "temperature": temperature,
+                "top_p": top_p,
+                "top_k": top_k,
+                "repeat_penalty": repeat_penalty,
             },
         }
 

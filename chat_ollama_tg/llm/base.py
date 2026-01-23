@@ -58,6 +58,9 @@ class BaseLLMAdapter(ABC):
         messages: list[Message],
         max_tokens: int = 1024,
         temperature: float = 0.7,
+        top_p: float = 0.9,
+        top_k: int = 40,
+        repeat_penalty: float = 1.1,
     ) -> str:
         """
         Generate a response from the LLM.
@@ -66,6 +69,9 @@ class BaseLLMAdapter(ABC):
             messages: List of chat messages (system, user, assistant)
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature
+            top_p: Nucleus sampling threshold
+            top_k: Top-k sampling parameter
+            repeat_penalty: Repetition penalty
 
         Returns:
             Generated text response

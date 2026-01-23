@@ -28,7 +28,7 @@ class Config:
     ollama_base_url: str = field(
         default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     )
-    ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen3:4b"))
+    ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "gemma2:2b"))
 
     # llama.cpp settings
     llamacpp_model_path: str = field(
@@ -49,7 +49,21 @@ class Config:
         default_factory=lambda: int(os.getenv("MAX_HISTORY_MESSAGES", "20"))
     )
     max_response_tokens: int = field(
-        default_factory=lambda: int(os.getenv("MAX_RESPONSE_TOKENS", "1024"))
+        default_factory=lambda: int(os.getenv("MAX_RESPONSE_TOKENS", "400"))
+    )
+
+    # LLM generation parameters (optimized for gemma2:2b real estate assistant)
+    llm_temperature: float = field(
+        default_factory=lambda: float(os.getenv("LLM_TEMPERATURE", "0.4"))
+    )
+    llm_top_p: float = field(
+        default_factory=lambda: float(os.getenv("LLM_TOP_P", "0.9"))
+    )
+    llm_top_k: int = field(
+        default_factory=lambda: int(os.getenv("LLM_TOP_K", "40"))
+    )
+    llm_repeat_penalty: float = field(
+        default_factory=lambda: float(os.getenv("LLM_REPEAT_PENALTY", "1.10"))
     )
 
     # Database
@@ -77,9 +91,8 @@ class Config:
     system_prompt: str = field(
         default_factory=lambda: os.getenv(
             "SYSTEM_PROMPT",
-            "Ты полезный ассистент. Отвечай точно и по существу. "
-            "Если ты не уверен в чём-то или не знаешь ответа, честно скажи об этом. "
-            "Не выдумывай факты и не придумывай информацию.",
+            "Ты — помощник по недвижимости. Отвечай кратко и по делу. "
+            "Не выдумывай цены, ставки и законы. Если не знаешь — скажи прямо.",
         )
     )
 
