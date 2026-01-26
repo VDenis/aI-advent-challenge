@@ -1,8 +1,9 @@
 # Памятка для Claude
 
 ## Контекст
-- Монорепо демо: MCP сервер погоды (`weather_mcp`), LangChain агент на GigaChat (`weather_mcp_cli`), набор CLI/ботов (`cli`, `bots`) и локальный Developer Assistant (`progect_assistant`).
+- Монорепо демо: MCP сервер погоды (`weather_mcp`), LangChain агент на GigaChat (`weather_mcp_cli`), набор CLI/ботов (`cli`, `bots`), локальный Developer Assistant (`progect_assistant`) и офлайн-анализатор данных (`eyes_ollama`).
 - Ассистент умеет работать как CLI, веб-UI и MCP сервер с RAG + git инструментами.
+- eyes_ollama — CLI для анализа проектов (код, git, зависимости) и данных с Ollama LLM для аналитических вопросов.
 
 ## Подготовка окружения
 - Python 3.10+. Базовые зависимости для погодного демо: `pip install -e .` из корня.
@@ -17,10 +18,12 @@
 - Developer Assistant как MCP сервер: `python -m progect_assistant.mcp_server` (использует RAG + git MCP).
 - Git MCP отдельно: `python -m progect_assistant.git_mcp_server`.
 - Веб-UI ассистента: `python -m progect_assistant.web_server`.
+- eyes_ollama (анализатор проекта): `python eyes_ollama/project_scanner.py scan .` и `python eyes_ollama/project_scanner.py ask . "вопрос"`.
 
 ## Тесты/проверки
 - Автотестов почти нет: `pytest cli/tests/test_hf_llama3_openai.py` (нужны токены HF/OpenAI).
 - Для дымовой проверки погоды запусти `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"` — агент должен вызвать `get_current_weather`.
+- Для проверки eyes_ollama: `python eyes_ollama/project_scanner.py scan . && python eyes_ollama/project_scanner.py ask . "сколько строк кода?"`.
 
 ## Примечания
 - RAG индекс ассистента хранится в `progect_assistant/.cache/rag_index.json`; команда `/index` в CLI пересобирает его.

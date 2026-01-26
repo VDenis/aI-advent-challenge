@@ -222,3 +222,4 @@ rag_search/corpus/
 rag_search/store/
 rag_search/test_corpus/
 rag_search/test_store/
+project_analysis.json
