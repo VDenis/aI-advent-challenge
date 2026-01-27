@@ -223,3 +223,7 @@ rag_search/store/
 rag_search/test_corpus/
 rag_search/test_store/
 project_analysis.json
+
+# Personal Chat runtime data
+personal_chat/.config/
+personal_chat/.history/

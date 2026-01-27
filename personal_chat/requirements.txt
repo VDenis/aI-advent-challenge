@@ -1,0 +1,11 @@
+# Personal Chat - зависимости
+
+# GigaChat SDK
+gigachat>=0.1.19
+
+# CLI интерфейс
+rich>=13.0.0
+
+# Конфигурация
+pyyaml>=6.0
+python-dotenv>=1.0.0

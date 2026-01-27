@@ -1,9 +1,10 @@
 # Памятка для Claude
 
 ## Контекст
-- Монорепо демо: MCP сервер погоды (`weather_mcp`), LangChain агент на GigaChat (`weather_mcp_cli`), набор CLI/ботов (`cli`, `bots`), локальный Developer Assistant (`progect_assistant`) и офлайн-анализатор данных (`eyes_ollama`).
+- Монорепо демо: MCP сервер погоды (`weather_mcp`), LangChain агент на GigaChat (`weather_mcp_cli`), набор CLI/ботов (`cli`, `bots`), локальный Developer Assistant (`progect_assistant`), офлайн-анализатор данных (`eyes_ollama`) и персонализированный чат (`personal_chat`).
 - Ассистент умеет работать как CLI, веб-UI и MCP сервер с RAG + git инструментами.
 - eyes_ollama — CLI для анализа проектов (код, git, зависимости) и данных с Ollama LLM для аналитических вопросов.
+- personal_chat — CLI чат с GigaChat, персонализацией через YAML-профиль и сохранением истории между сессиями.
 
 ## Подготовка окружения
 - Python 3.10+. Базовые зависимости для погодного демо: `pip install -e .` из корня.
@@ -19,6 +20,7 @@
 - Git MCP отдельно: `python -m progect_assistant.git_mcp_server`.
 - Веб-UI ассистента: `python -m progect_assistant.web_server`.
 - eyes_ollama (анализатор проекта): `python eyes_ollama/project_scanner.py scan .` и `python eyes_ollama/project_scanner.py ask . "вопрос"`.
+- Personal Chat (персонализированный чат): `python -m personal_chat`.
 
 ## Тесты/проверки
 - Автотестов почти нет: `pytest cli/tests/test_hf_llama3_openai.py` (нужны токены HF/OpenAI).
@@ -28,4 +30,4 @@
 ## Примечания
 - RAG индекс ассистента хранится в `progect_assistant/.cache/rag_index.json`; команда `/index` в CLI пересобирает его.
 - Конфиг MCP для ассистента/гита/саппорта лежит в `progect_assistant/mcp_config.json`.
-- Не коммить `.env`, логи (`progect_assistant/logs/`), `.cache/`, `venv*`, `venvmcp*`.
+- Не коммить `.env`, логи (`progect_assistant/logs/`), `.cache/`, `venv*`, `venvmcp*`, `personal_chat/.config/`, `personal_chat/.history/`.

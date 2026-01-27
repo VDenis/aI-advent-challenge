@@ -12,6 +12,7 @@
 - `reminder/` — MCP SSE планировщик + Textual клиент в Docker.
 - `mobileautomation/` — MCP orchestrator для Android эмулятора/ADB в Docker.
 - `bots/` — Telegram/CLI демо, включая YouTube RAG бот (`bots/youtalk`).
+- `personal_chat/` — персонализированный CLI чат с GigaChat: YAML-профиль пользователя, история разговоров между сессиями.
 - Памятки для агентов: `CLAUDE.md` и `AGENTS.md`.
 
 ## Быстрый старт: погода (GigaChat + MCP)
@@ -49,6 +50,16 @@
    python eyes_ollama/project_scanner.py ask . "какие файлы чаще меняются?"
    python eyes_ollama/project_scanner.py chat .
    ```
+
+## Быстрый старт: Personal Chat (персонализированный чат)
+1. Установи зависимости: `pip install -r personal_chat/requirements.txt`
+2. Убедись, что в `.env` есть `GIGACHAT_CREDENTIALS`
+3. Запусти:
+   ```bash
+   python -m personal_chat
+   ```
+4. Команды в чате: `/profile` (профиль), `/history` (история), `/new` (новый разговор), `/help` (справка).
+5. Профиль пользователя: `personal_chat/.config/profile.yaml` (пример в `personal_chat/profile_example.yaml`).
 
 ## Acceptance (погодное демо)
 - Запусти `python -m weather_mcp_cli.main "Какая сейчас температура и ветер в Москве?"`
