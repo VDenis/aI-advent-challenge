@@ -33,6 +33,15 @@ from personal_chat.chat import ChatClient
 
 console = Console()
 
+# Проверяем доступность голосового модуля
+_voice_available = False
+try:
+    import sounddevice  # noqa: F401
+    import whisper  # noqa: F401
+    _voice_available = True
+except ImportError:
+    pass
+
 
 class PersonalChatCLI:
     """CLI для персонализированного чата."""
@@ -43,6 +52,9 @@ class PersonalChatCLI:
         self.chat_client = None
         self.current_conversation = None
         self.streaming = True
+        self.voice_enabled = _voice_available
+        self.voice_duration = 5.0
+        self.voice_model = "base"
 
     def print_welcome(self) -> None:
         """Выводит приветственное сообщение."""
@@ -61,6 +73,7 @@ class PersonalChatCLI:
   /history  - показать историю разговоров
   /continue - продолжить последний разговор
   /profile  - показать/редактировать профиль
+  /voice    - вкл/выкл голосовой ввод (Enter = запись)
   /clear    - очистить экран
   /exit     - выйти
 """
@@ -83,6 +96,7 @@ class PersonalChatCLI:
             ("/models", "Показать доступные модели"),
             ("/model <name>", "Сменить модель"),
             ("/stream", "Переключить потоковый режим"),
+            ("/voice", "Вкл/выкл голосовой ввод (Enter без текста = запись)"),
             ("/delete <id>", "Удалить разговор"),
             ("/clear", "Очистить экран"),
             ("/exit, /quit, /q", "Выйти из программы"),
@@ -152,6 +166,13 @@ class PersonalChatCLI:
         elif cmd == "/stream":
             self.streaming = not self.streaming
             console.print(f"[cyan]Потоковый режим:[/cyan] {'включён' if self.streaming else 'выключен'}")
+
+        elif cmd == "/voice":
+            if not _voice_available:
+                console.print("[red]Голосовой модуль недоступен.[/red] Установите: pip install openai-whisper sounddevice numpy")
+                return True
+            self.voice_enabled = not self.voice_enabled
+            console.print(f"[cyan]Голосовой ввод:[/cyan] {'включён (Enter без текста = запись)' if self.voice_enabled else 'выключен'}")
 
         elif cmd == "/delete":
             if args:
@@ -374,6 +395,24 @@ class PersonalChatCLI:
         except Exception as e:
             console.print(f"\n[red]Ошибка при отправке:[/red] {e}")
 
+    def _voice_record(self) -> str:
+        """Записывает голос и возвращает распознанный текст."""
+        try:
+            from personal_chat.voice import record_audio, recognize
+
+            console.print(f"[bold magenta]Говорите... ({self.voice_duration} сек)[/bold magenta]")
+            audio = record_audio(duration=self.voice_duration)
+            console.print("[dim]Распознаю...[/dim]")
+            text = recognize(audio, model_name=self.voice_model, language="ru")
+            if text:
+                console.print(f"[bold blue]Вы (голос):[/bold blue] {text}")
+            else:
+                console.print("[yellow]Не удалось распознать речь[/yellow]")
+            return text
+        except Exception as e:
+            console.print(f"[red]Ошибка голосового ввода:[/red] {e}")
+            return ""
+
     def run(self) -> None:
         """Запускает CLI."""
         self.print_welcome()
@@ -411,7 +450,12 @@ class PersonalChatCLI:
                 user_input = Prompt.ask("[bold blue]Вы[/bold blue]")
 
                 if not user_input.strip():
-                    continue
+                    if self.voice_enabled:
+                        user_input = self._voice_record()
+                        if not user_input:
+                            continue
+                    else:
+                        continue
 
                 if user_input.startswith("/"):
                     if not self.handle_command(user_input):
