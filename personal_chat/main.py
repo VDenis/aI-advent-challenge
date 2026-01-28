@@ -30,6 +30,7 @@ from personal_chat.config import (
 )
 from personal_chat.history import HistoryManager, Conversation
 from personal_chat.chat import ChatClient
+from personal_chat.project_tools import ProjectTools
 
 console = Console()
 
@@ -55,6 +56,7 @@ class PersonalChatCLI:
         self.voice_enabled = _voice_available
         self.voice_duration = 5.0
         self.voice_model = "base"
+        self.project_tools = None  # инициализируется после chat_client
 
     def print_welcome(self) -> None:
         """Выводит приветственное сообщение."""
@@ -73,6 +75,9 @@ class PersonalChatCLI:
   /history  - показать историю разговоров
   /continue - продолжить последний разговор
   /profile  - показать/редактировать профиль
+  /scan     - сканировать проект (метрики, git, зависимости)
+  /search   - поиск по файлам проекта
+  /review   - код-ревью файла через GigaChat
   /voice    - вкл/выкл голосовой ввод (Enter = запись)
   /clear    - очистить экран
   /exit     - выйти
@@ -97,6 +102,10 @@ class PersonalChatCLI:
             ("/model <name>", "Сменить модель"),
             ("/stream", "Переключить потоковый режим"),
             ("/voice", "Вкл/выкл голосовой ввод (Enter без текста = запись)"),
+            ("/scan [путь]", "Сканировать проект (код, git, зависимости)"),
+            ("/metrics", "Показать метрики последнего сканирования"),
+            ("/search <запрос> [путь]", "Поиск по файлам проекта (regex)"),
+            ("/review <файл>", "Код-ревью файла через GigaChat"),
             ("/delete <id>", "Удалить разговор"),
             ("/clear", "Очистить экран"),
             ("/exit, /quit, /q", "Выйти из программы"),
@@ -111,6 +120,7 @@ class PersonalChatCLI:
         """Инициализирует клиент чата."""
         try:
             self.chat_client = ChatClient(self.config)
+            self.project_tools = ProjectTools(self.chat_client)
             return True
         except ValueError as e:
             console.print(f"[red]Ошибка:[/red] {e}")
@@ -173,6 +183,25 @@ class PersonalChatCLI:
                 return True
             self.voice_enabled = not self.voice_enabled
             console.print(f"[cyan]Голосовой ввод:[/cyan] {'включён (Enter без текста = запись)' if self.voice_enabled else 'выключен'}")
+
+        elif cmd == "/scan":
+            self.project_tools.scan(args if args else ".")
+
+        elif cmd == "/metrics":
+            self.project_tools.metrics()
+
+        elif cmd == "/search":
+            if args:
+                # Весь args — это запрос; путь берётся из последнего скана
+                self.project_tools.search(args)
+            else:
+                console.print("[yellow]Укажите запрос: /search <запрос>[/yellow]")
+
+        elif cmd == "/review":
+            if args:
+                self.project_tools.review(args)
+            else:
+                console.print("[yellow]Укажите файл: /review <путь к файлу>[/yellow]")
 
         elif cmd == "/delete":
             if args:

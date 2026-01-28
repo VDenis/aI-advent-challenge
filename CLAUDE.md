@@ -4,7 +4,7 @@
 - Монорепо демо: MCP сервер погоды (`weather_mcp`), LangChain агент на GigaChat (`weather_mcp_cli`), набор CLI/ботов (`cli`, `bots`), локальный Developer Assistant (`progect_assistant`), офлайн-анализатор данных (`eyes_ollama`) и персонализированный чат (`personal_chat`).
 - Ассистент умеет работать как CLI, веб-UI и MCP сервер с RAG + git инструментами.
 - eyes_ollama — CLI для анализа проектов (код, git, зависимости) и данных с Ollama LLM для аналитических вопросов.
-- personal_chat — CLI чат с GigaChat, персонализацией через YAML-профиль и сохранением истории между сессиями.
+- personal_chat — CLI чат с GigaChat, персонализацией через YAML-профиль, сохранением истории между сессиями, а также инструментами анализа проектов (`/scan`, `/search`, `/review`, `/metrics`).
 
 ## Подготовка окружения
 - Python 3.10+. Базовые зависимости для погодного демо: `pip install -e .` из корня.
@@ -21,6 +21,7 @@
 - Веб-UI ассистента: `python -m progect_assistant.web_server`.
 - eyes_ollama (анализатор проекта): `python eyes_ollama/project_scanner.py scan .` и `python eyes_ollama/project_scanner.py ask . "вопрос"`.
 - Personal Chat (персонализированный чат): `python -m personal_chat`.
+  - В чате: `/scan <путь>` — сканировать проект, `/metrics` — метрики, `/search <запрос>` — поиск по файлам, `/review <файл>` — код-ревью через GigaChat.
 
 ## Тесты/проверки
 - Автотестов почти нет: `pytest cli/tests/test_hf_llama3_openai.py` (нужны токены HF/OpenAI).
